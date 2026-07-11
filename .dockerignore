@@ -1,0 +1,12 @@
+**/node_modules
+.git
+.claude
+docs
+README.md
+Dockerfile
+compose.yaml
+apps/server/dist
+apps/web/dist
+apps/server/.env
+apps/server/data
+data

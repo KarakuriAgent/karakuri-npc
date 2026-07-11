@@ -1,0 +1,32 @@
+services:
+  npc:
+    build:
+      context: .
+      # systemd-resolved 環境では BuildKit コンテナ内で DNS が引けず npm ci が
+      # EAI_AGAIN で落ちるため、ビルド時のみホストネットワークを使う
+      network: host
+    container_name: karakuri-npc
+    ports:
+      - "8300:8300"
+    # apps/server/.env をそのまま流用する（無ければ環境変数だけで起動）
+    env_file:
+      - path: apps/server/.env
+        required: false
+    environment:
+      # コンテナ内では固定（.env の PORT/DATA_DIR より優先される）
+      PORT: 8300
+      DATA_DIR: /app/data
+    volumes:
+      - npc-data:/app/data
+    restart: unless-stopped
+    init: true
+    # graceful shutdown（NPC キュー排水）の内部タイムアウト 10 秒より長く取る
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8300/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+
+volumes:
+  npc-data:

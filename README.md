@@ -66,6 +66,20 @@ npm run dev:server   # サーバー (tsx watch, :8300)
 npm run dev:web      # WebUI (Vite, :8301 → /api を :8300 に proxy)
 ```
 
+### Docker Compose で起動する場合
+
+環境変数は `apps/server/.env` がそのまま使われる（`PORT` / `DATA_DIR` はコンテナ内固定値で上書き）。
+SQLite は named volume `npc-data` に永続化される。
+
+```bash
+docker compose up -d --build
+docker compose logs -f       # ログ確認
+docker compose down          # 停止（データは volume に残る）
+```
+
+ホスト側ポートを変えたいときは `compose.yaml` の `ports`（例: `"9000:8300"`）を編集する。
+webhook 公開 URL（トンネル）はコンテナ外で用意する: `cloudflared tunnel --url http://localhost:8300`
+
 ## NPC の作り方
 
 1. **world 側**で NPC エージェントを作成する（admin 限定）
