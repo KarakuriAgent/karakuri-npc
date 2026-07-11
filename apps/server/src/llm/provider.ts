@@ -67,7 +67,7 @@ export function resolveLlmSettings(config: AppConfig, store: NpcStore, npc: Npc)
   const temperature = npc.llm.temperature ?? global.temperature;
 
   if (provider === 'anthropic') {
-    const apiKey = global.api_key ?? config.ANTHROPIC_API_KEY;
+    const apiKey = npc.llm.api_key ?? global.api_key ?? config.ANTHROPIC_API_KEY;
     const model = npc.llm.model ?? global.model;
     if (!apiKey || !model) return null;
     return {
@@ -78,8 +78,8 @@ export function resolveLlmSettings(config: AppConfig, store: NpcStore, npc: Npc)
     };
   }
 
-  const baseUrl = global.base_url ?? config.OPENAI_BASE_URL;
-  const apiKey = global.api_key ?? config.OPENAI_API_KEY;
+  const baseUrl = npc.llm.base_url ?? global.base_url ?? config.OPENAI_BASE_URL;
+  const apiKey = npc.llm.api_key ?? global.api_key ?? config.OPENAI_API_KEY;
   const model = npc.llm.model ?? global.model ?? config.OPENAI_MODEL;
   if (!baseUrl || !model) return null;
   return {

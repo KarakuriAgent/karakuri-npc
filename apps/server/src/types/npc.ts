@@ -30,6 +30,8 @@ export type TransferPolicy = z.infer<typeof transferPolicySchema>;
 
 export const llmConfigSchema = z.object({
   provider: z.enum(['openai_compatible', 'anthropic']).optional(),
+  base_url: z.string().url().optional(),
+  api_key: z.string().optional(),
   model: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
   system_prompt_extra: z.string().optional(),

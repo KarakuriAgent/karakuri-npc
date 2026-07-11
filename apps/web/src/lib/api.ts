@@ -33,7 +33,7 @@ export interface NpcDto {
   movement: MovementConfig;
   conversation: { accept: string; inactive_check: string; max_history_pairs: number };
   transfer: { receive: string; give_enabled: boolean };
-  llm: { provider?: string; model?: string; temperature?: number; system_prompt_extra?: string };
+  llm: { provider?: string; base_url?: string; api_key?: string; model?: string; temperature?: number; system_prompt_extra?: string };
   created_at: number;
   updated_at: number;
   runtime: NpcRuntimeState | null;

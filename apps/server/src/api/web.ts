@@ -67,7 +67,7 @@ function npcDto(npc: Npc, store: NpcStore): Record<string, unknown> {
     movement: npc.movement,
     conversation: npc.conversation,
     transfer: npc.transfer,
-    llm: npc.llm,
+    llm: { ...npc.llm, ...(npc.llm.api_key ? { api_key: mask(npc.llm.api_key) } : {}) },
     created_at: npc.created_at,
     updated_at: npc.updated_at,
     runtime,
@@ -116,7 +116,13 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
     if (store.getNpcByAgentId(body.data.agent_id)) {
       return c.json({ error: 'duplicate_agent_id', message: 'この agent_id は登録済みです。' }, 409);
     }
-    const npc = store.createNpc({ ...body.data, home_node_id: body.data.home_node_id ?? null });
+    const input = { ...body.data };
+    // マスク値（**** 始まり）の llm.api_key は新規作成では意味を持たないため落とす
+    if (input.llm?.api_key?.startsWith('****')) {
+      input.llm = { ...input.llm };
+      delete input.llm.api_key;
+    }
+    const npc = store.createNpc({ ...input, home_node_id: input.home_node_id ?? null });
     if (npc.enabled) void manager.healthCheck().catch(() => {});
     return c.json(npcDto(npc, store), 201);
   });
@@ -136,6 +142,13 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
     const patch = { ...body.data };
     if (!patch.api_key) delete patch.api_key;
     if (!patch.webhook_secret) delete patch.webhook_secret;
+    // マスクされた llm.api_key（**** 始まり）は既存値を維持する
+    if (patch.llm?.api_key?.startsWith('****')) {
+      const existing = store.getNpc(c.req.param('id'))?.llm.api_key;
+      patch.llm = { ...patch.llm };
+      if (existing) patch.llm.api_key = existing;
+      else delete patch.llm.api_key;
+    }
     const npc = store.updateNpc(c.req.param('id'), patch);
     if (!npc) return c.json({ error: 'not_found' }, 404);
     void manager.healthCheck().catch(() => {});

@@ -23,6 +23,8 @@ const emptyForm = {
   transfer_receive: 'always_accept',
   give_enabled: true,
   llm_provider: '',
+  llm_base_url: '',
+  llm_api_key: '',
   llm_model: '',
   llm_temperature: '',
 };
@@ -50,6 +52,8 @@ function toForm(npc: NpcDto): FormState {
     transfer_receive: npc.transfer.receive,
     give_enabled: npc.transfer.give_enabled,
     llm_provider: npc.llm.provider ?? '',
+    llm_base_url: npc.llm.base_url ?? '',
+    llm_api_key: npc.llm.api_key ?? '',
     llm_model: npc.llm.model ?? '',
     llm_temperature: npc.llm.temperature?.toString() ?? '',
   };
@@ -83,6 +87,8 @@ function toPayload(form: FormState, isNew: boolean): Record<string, unknown> {
     },
     llm: {
       ...(form.llm_provider ? { provider: form.llm_provider } : {}),
+      ...(form.llm_base_url ? { base_url: form.llm_base_url } : {}),
+      ...(form.llm_api_key ? { api_key: form.llm_api_key } : {}),
       ...(form.llm_model ? { model: form.llm_model } : {}),
       ...(form.llm_temperature !== '' ? { temperature: Number(form.llm_temperature) } : {}),
     },
@@ -323,6 +329,12 @@ export default function NpcForm() {
           </Field>
           <Field label="temperature">
             <input type="number" min={0} max={2} step={0.1} className={inputClass} value={form.llm_temperature} onChange={(e) => set('llm_temperature', e.target.value)} placeholder="0.7" />
+          </Field>
+          <Field label="ベース URL（OpenAI 互換のみ）">
+            <input className={inputClass} value={form.llm_base_url} onChange={(e) => set('llm_base_url', e.target.value)} placeholder="グローバル設定に従う" />
+          </Field>
+          <Field label="API キー">
+            <input type="password" className={inputClass} value={form.llm_api_key} onChange={(e) => set('llm_api_key', e.target.value)} placeholder="グローバル設定に従う" />
           </Field>
         </div>
       </section>
