@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { ConversationParticipant, ConversationStore } from '../../storage/conversation-store.js';
+import type { NpcStore } from '../../storage/npc-store.js';
 import type { Npc } from '../../types/npc.js';
 import type { AgentNotification } from '../../types/world.js';
 import type { ConversationEngine } from '../conversation-engine.js';
@@ -46,6 +47,8 @@ export interface ConversationHandlersDeps {
   conversations: ConversationStore;
   engine: ConversationEngine;
   memory: MemoryService;
+  /** give_enabled 時の所持品参照（状態ミラー）に使う。省略時は give 無効。 */
+  store?: NpcStore | undefined;
   /** 会話終了通知に含まれる次の行動 choices の処理を委譲する（idle 契機ハンドラ）。 */
   idleHandler?: NotificationHandler | undefined;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
@@ -114,11 +117,31 @@ export function createConversationHandlers(deps: ConversationHandlersDeps): Noti
   ): Promise<CommandChoice | null> => {
     const record = conversations.getConversation(npc.npc_id, conversationId);
     const knownParticipants = participants.length > 0 ? participants : (record?.participants ?? []);
+
+    // world 仕様: transfer（give）と transfer_response は同時指定不可。
+    // 保留オファーへの応答が必要なターンでは give を無効化する。
+    const speakChoice = notification.choices.find((choice) => choice.command === 'conversation_speak');
+    const mustRespondTransfer = speakChoice?.required_params?.includes('transfer_response') ?? false;
+    const runtime = deps.store?.getRuntime(npc.npc_id) ?? null;
+    const allowGive = npc.transfer.give_enabled && !mustRespondTransfer && runtime !== null;
+
     const decision = await engine.decideSpeak(npc, {
       conversationId,
       participants: knownParticipants,
       perception: notification.perception,
       closing,
+      allowGive,
+      ...(allowGive
+        ? {
+            inventory: {
+              money: runtime.money,
+              items: (runtime.items ?? []).map((item) => ({
+                item_id: item.item_id,
+                name: typeof item.name === 'string' ? item.name : undefined,
+              })),
+            },
+          }
+        : {}),
     });
 
     conversations.insertMessage({
@@ -138,6 +161,8 @@ export function createConversationHandlers(deps: ConversationHandlersDeps): Noti
       params: {
         message: decision.message,
         next_speaker_agent_id: decision.next_speaker_agent_id,
+        // give は speak のみに添付できる（end の schema に transfer は無い）
+        ...(command === 'conversation_speak' && decision.transfer ? { transfer: decision.transfer } : {}),
         ...transferResponseParams(npc, notification, command),
       },
     };

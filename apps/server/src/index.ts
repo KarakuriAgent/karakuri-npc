@@ -9,6 +9,7 @@ import { ConversationEngine } from './runtime/conversation-engine.js';
 import { createConversationHandlers } from './runtime/handlers/conversation.js';
 import { createIdleHandlers } from './runtime/handlers/idle.js';
 import { createLifecycleHandlers } from './runtime/handlers/lifecycle.js';
+import { createTransferHandlers } from './runtime/handlers/transfer.js';
 import { NpcManager } from './runtime/manager.js';
 import { MemoryService } from './runtime/memory.js';
 import { openDatabase } from './storage/database.js';
@@ -27,7 +28,7 @@ const idleHandlers = createIdleHandlers(store);
 
 const manager = new NpcManager({
   store,
-  // transfer 系ハンドラは Phase 4 で追加する。未登録 kind は fallback（wait）で処理される。
+  // 未登録 kind は fallback（wait）で処理される。
   handlers: {
     ...createLifecycleHandlers(store),
     ...idleHandlers,
@@ -35,6 +36,12 @@ const manager = new NpcManager({
       conversations,
       engine,
       memory,
+      store,
+      idleHandler: idleHandlers.idle_reminder,
+    }),
+    ...createTransferHandlers({
+      store,
+      engine,
       idleHandler: idleHandlers.idle_reminder,
     }),
   },

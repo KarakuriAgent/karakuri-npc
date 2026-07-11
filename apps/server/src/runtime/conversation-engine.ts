@@ -6,13 +6,29 @@ import type { ConversationMessage, ConversationParticipant, ConversationStore } 
 import type { Npc } from '../types/npc.js';
 import type { AgentNotificationPerception } from '../types/world.js';
 
-/** LLM が会話ターンで返す構造化出力。 */
+/** LLM が会話ターンで返す構造化出力。give は give_enabled のときだけ有効。 */
 export const speakDecisionSchema = z.object({
   message: z.string().min(1),
   next_speaker_agent_id: z.string().optional(),
   end_conversation: z.boolean().optional().default(false),
+  give: z
+    .object({
+      item_id: z.string().optional(),
+      money: z.number().int().min(1).optional(),
+    })
+    .optional(),
 });
-export type SpeakDecision = z.infer<typeof speakDecisionSchema>;
+
+/** world の conversation_speak params.transfer と同形の添付。 */
+export type TransferAttachment = { item: { item_id: string; quantity: number } } | { money: number };
+
+export interface SpeakDecision {
+  message: string;
+  next_speaker_agent_id?: string | undefined;
+  end_conversation: boolean;
+  /** 検証済み（所持と整合する）の譲渡添付。無ければ undefined。 */
+  transfer?: TransferAttachment | undefined;
+}
 
 export const acceptDecisionSchema = z.object({
   accept: z.boolean(),
@@ -22,11 +38,20 @@ export type AcceptDecision = z.infer<typeof acceptDecisionSchema>;
 
 const summarySchema = z.object({ summary: z.string().min(1) });
 
+export interface ConversationInventory {
+  money: number | null;
+  items: Array<{ item_id: string; name?: string | undefined }>;
+}
+
 export interface ConversationSituation {
   perception?: AgentNotificationPerception | undefined;
   participants: ConversationParticipant[];
   conversationId: string;
   closing?: boolean;
+  /** give_enabled のときに渡す所持品情報（状態ミラー由来）。 */
+  inventory?: ConversationInventory | undefined;
+  /** 保留中の譲渡オファーへの応答が必要なターンでは give を無効化する（world 仕様: transfer と transfer_response は同時指定不可）。 */
+  allowGive?: boolean;
 }
 
 const FALLBACK_REPLIES = ['そうなんですね。', 'なるほど…。', 'ふむふむ。'];
@@ -103,18 +128,23 @@ export class ConversationEngine {
     const nextSpeakerNote = others.length > 0
       ? `next_speaker_agent_id は次に話してほしい相手の agent_id（${others.map((p) => `${p.id}=${p.name}`).join(', ')}）から選んでください。`
       : '';
+    const canGive = situation.allowGive === true && !situation.closing && situation.inventory !== undefined;
+    const giveNote = canGive
+      ? '\n会話の流れで相手に所持品やお金を渡すのが自然な場合のみ、give に {"item_id": "..."} または {"money": 金額} を指定できます。通常は指定しません。'
+      : '';
+    const giveFormat = canGive ? ', "give": {"item_id": "渡す場合のみ"} または {"money": 金額}' : '';
 
     const messages: LlmMessage[] = [
       { role: 'system', content: system },
       ...history,
-      { role: 'system', content: `${task}\n${nextSpeakerNote}` },
+      { role: 'system', content: `${task}\n${nextSpeakerNote}${giveNote}` },
     ];
     try {
       const decision = await this.llm.generateJson(
         npc,
         messages,
         speakDecisionSchema,
-        '{"message": "発言(1〜3文)", "next_speaker_agent_id": "agent_id", "end_conversation": boolean}',
+        `{"message": "発言(1〜3文)", "next_speaker_agent_id": "agent_id", "end_conversation": boolean${giveFormat}}`,
       );
       return this.normalizeSpeakDecision(npc, decision, others, situation);
     } catch (error) {
@@ -129,6 +159,31 @@ export class ConversationEngine {
         situation,
       );
     }
+  }
+
+  /** 単独譲渡の受け取り判断（TransferPolicy.receive === 'llm' のとき）。 */
+  async decideTransferReceive(npc: Npc, input: { fromName: string; offerSummary: string }): Promise<boolean> {
+    // transfer_request payload は名前しか持たないため、記憶は名前で逆引きする。
+    const memory = this.conversations
+      .listMemories(npc.npc_id)
+      .find((record) => record.counterpart_name === input.fromName) ?? null;
+    const messages: LlmMessage[] = [
+      {
+        role: 'system',
+        content: `あなたは仮想世界の住人「${npc.name}」です。\n${npc.persona.trim()}`,
+      },
+      {
+        role: 'user',
+        content: `${input.fromName} からの譲渡提案が届きました:\n${input.offerSummary}\n\n${memory ? `相手についての記憶: ${memory.summary}\n` : ''}この提案を受け取りますか？あなたの役割に照らして判断してください。`,
+      },
+    ];
+    const result = await this.llm.generateJson(
+      npc,
+      messages,
+      z.object({ accept: z.boolean() }),
+      '{"accept": boolean}',
+    );
+    return result.accept;
   }
 
   /** 会話終了後の相手ごとの記憶更新。新しい累積要約を返す。 */
@@ -167,7 +222,7 @@ export class ConversationEngine {
    */
   private normalizeSpeakDecision(
     npc: Npc,
-    decision: { message: string; next_speaker_agent_id?: string | undefined; end_conversation: boolean },
+    decision: z.infer<typeof speakDecisionSchema>,
     others: ConversationParticipant[],
     situation: ConversationSituation,
   ): SpeakDecision {
@@ -184,7 +239,35 @@ export class ConversationEngine {
       message: decision.message,
       next_speaker_agent_id: next,
       end_conversation: decision.end_conversation,
+      transfer: this.validateGive(npc, decision.give, situation),
     };
+  }
+
+  /** LLM の give 出力を所持品・所持金と突き合わせ、妥当なら transfer 添付に変換する。 */
+  private validateGive(
+    npc: Npc,
+    give: { item_id?: string | undefined; money?: number | undefined } | undefined,
+    situation: ConversationSituation,
+  ): TransferAttachment | undefined {
+    if (!give || situation.allowGive !== true || situation.closing) return undefined;
+    const inventory = situation.inventory;
+    if (!inventory) return undefined;
+    if (give.item_id) {
+      const owned = inventory.items.find((item) => item.item_id === give.item_id);
+      if (!owned) {
+        this.logger.warn(`[${npc.npc_id}] give ignored: item not owned: ${give.item_id}`);
+        return undefined;
+      }
+      return { item: { item_id: give.item_id, quantity: 1 } };
+    }
+    if (give.money && give.money > 0) {
+      if (inventory.money === null || give.money > inventory.money) {
+        this.logger.warn(`[${npc.npc_id}] give ignored: not enough money: ${give.money}`);
+        return undefined;
+      }
+      return { money: give.money };
+    }
+    return undefined;
   }
 
   private buildSystemPrompt(npc: Npc, situation: ConversationSituation): string {
@@ -216,6 +299,13 @@ export class ConversationEngine {
         return `- ${other.name}: ${memory?.summary ?? '(初対面。まだ記憶はない)'}`;
       });
       sections.push(`# 会話相手についての記憶\n${memoryLines.join('\n')}`);
+    }
+
+    if (situation.allowGive === true && situation.inventory) {
+      const items = situation.inventory.items.map((item) => `${item.name ?? item.item_id}(${item.item_id})`);
+      sections.push(
+        `# 所持品\n所持金: ${situation.inventory.money ?? '不明'}\n所持品: ${items.length > 0 ? items.join(', ') : 'なし'}`,
+      );
     }
 
     sections.push(
