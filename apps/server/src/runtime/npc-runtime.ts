@@ -3,6 +3,7 @@ import type { Npc } from '../types/npc.js';
 import type { AgentNotification, AgentNotificationKind } from '../types/world.js';
 import { WorldApiError, WorldClient, defaultCreateClient } from '../world/client.js';
 import { chooseFallbackCommand, type CommandChoice } from './handlers/fallback.js';
+import { applyCommandResultToMirror, applyNotificationToMirror } from './state-mirror.js';
 
 export interface NotificationContext {
   npc: Npc;
@@ -10,11 +11,18 @@ export interface NotificationContext {
   notification: AgentNotification;
 }
 
-/** kind 別ハンドラ。コマンドを返すと runtime が実行する（null = 何もしない）。 */
+/**
+ * kind 別ハンドラの決定結果。
+ * 配列は優先順の候補列で、runtime が先頭から順に試し最初に受理されたものを採用する
+ * （move はマップ都合で拒否されうるため候補列 + wait を返すのが典型）。null = 何もしない。
+ */
+export type CommandDecision = CommandChoice | CommandChoice[] | null;
+
+/** kind 別ハンドラ。コマンド決定を返すと runtime が実行する。 */
 export type NotificationHandler = (
   ctx: NotificationContext,
   runtime: NpcRuntime,
-) => Promise<CommandChoice | null> | CommandChoice | null;
+) => Promise<CommandDecision> | CommandDecision;
 
 export type NotificationHandlers = Partial<Record<AgentNotificationKind, NotificationHandler>>;
 
@@ -90,11 +98,12 @@ export class NpcRuntime {
       return;
     }
 
+    // 全通知共通: perception から状態ミラー（現在地・所持金・ワールド）を更新する。
+    applyNotificationToMirror(this.store, npc.npc_id, notification);
+
     try {
-      const choice = await this.decideChoice(npc, notificationId, notification);
-      if (choice) {
-        await this.executeCommand(npc, notificationId, choice, client);
-      }
+      const decision = await this.decideChoice(npc, notificationId, notification);
+      await this.executeDecision(npc, notificationId, decision, client);
       this.store.updateDelivery(deliveryId, { status: 'done', error: null });
     } catch (error) {
       this.recordFailure(deliveryId, npc, 'handler_failed', error);
@@ -106,7 +115,7 @@ export class NpcRuntime {
     npc: Npc,
     notificationId: string,
     notification: AgentNotification,
-  ): Promise<CommandChoice | null> {
+  ): Promise<CommandDecision> {
     const handler = (this.handlers as Partial<Record<string, NotificationHandler>>)[notification.kind];
     if (handler) {
       return handler({ npc, notificationId, notification }, this);
@@ -114,13 +123,34 @@ export class NpcRuntime {
     return chooseFallbackCommand(notification, npc.movement.rest_duration);
   }
 
-  /** コマンドを実行しログに記録する。stale 通知は最新通知で 1 回だけ再決定する。 */
+  /** 候補列を先頭から試し、最初に受理されたコマンドで確定する（1 通知 1 コマンド）。 */
+  private async executeDecision(
+    npc: Npc,
+    notificationId: string,
+    decision: CommandDecision,
+    client: WorldClient,
+  ): Promise<unknown> {
+    if (!decision) return null;
+    const candidates = Array.isArray(decision) ? decision : [decision];
+    for (const [index, choice] of candidates.entries()) {
+      const isLast = index === candidates.length - 1;
+      const result = await this.executeCommand(npc, notificationId, choice, client, true, !isLast);
+      if (result !== null) return result;
+    }
+    return null;
+  }
+
+  /**
+   * コマンドを実行しログに記録する。stale 通知は最新通知で 1 回だけ再決定する。
+   * 拒否（WorldApiError で処理継続可能なもの）は null を返し、候補列の次を試せるようにする。
+   */
   async executeCommand(
     npc: Npc,
     notificationId: string,
     choice: CommandChoice,
     client: WorldClient = this.createClient(npc),
     allowStaleRetry = true,
+    quietRejection = false,
   ): Promise<unknown> {
     try {
       const result = await client.command(notificationId, choice.command, choice.params);
@@ -133,6 +163,8 @@ export class NpcRuntime {
         result,
       });
       this.store.patchRuntime(npc.npc_id, { last_command_at: Date.now(), last_error: null });
+      // info 系コマンドの inline data（get_status 等）を状態ミラーへ反映する。
+      applyCommandResultToMirror(this.store, npc.npc_id, choice.command, result);
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -153,16 +185,29 @@ export class NpcRuntime {
           const latest = this.extractLatestNotification(error);
           if (latest) {
             this.logger.warn(`[${npc.npc_id}] stale notification ${notificationId} -> retry with ${latest.id}`);
-            const nextChoice = await this.decideChoice(npc, latest.id, latest.notification);
-            if (nextChoice) {
-              return this.executeCommand(npc, latest.id, nextChoice, client, false);
+            const nextDecision = await this.decideChoice(npc, latest.id, latest.notification);
+            if (!nextDecision) return null;
+            const candidates = Array.isArray(nextDecision) ? nextDecision : [nextDecision];
+            for (const [index, next] of candidates.entries()) {
+              const result = await this.executeCommand(
+                npc,
+                latest.id,
+                next,
+                client,
+                false,
+                index < candidates.length - 1,
+              );
+              if (result !== null) return result;
             }
             return null;
           }
         }
-        // state_conflict / info_already_consumed 等は次の通知で立て直せるため握りつぶす。
-        this.logger.warn(`[${npc.npc_id}] command ${choice.command} rejected: ${error.code} ${error.message}`);
-        this.store.patchRuntime(npc.npc_id, { last_error: `${error.code}: ${error.message}` });
+        // state_conflict / info_already_consumed / invalid_move_target 等は
+        // 次の候補または次の通知で立て直せるため握りつぶす。
+        if (!quietRejection) {
+          this.logger.warn(`[${npc.npc_id}] command ${choice.command} rejected: ${error.code} ${error.message}`);
+          this.store.patchRuntime(npc.npc_id, { last_error: `${error.code}: ${error.message}` });
+        }
         return null;
       }
       throw error;

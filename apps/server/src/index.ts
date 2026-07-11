@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server';
 
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
+import { createIdleHandlers } from './runtime/handlers/idle.js';
 import { createLifecycleHandlers } from './runtime/handlers/lifecycle.js';
 import { NpcManager } from './runtime/manager.js';
 import { openDatabase } from './storage/database.js';
@@ -15,9 +16,10 @@ const store = new NpcStore(db);
 
 const manager = new NpcManager({
   store,
-  // kind 別ハンドラは Phase 2 以降で拡充する。未登録 kind は fallback（wait）で処理される。
+  // 会話 / transfer 系ハンドラは Phase 3-4 で追加する。未登録 kind は fallback（wait）で処理される。
   handlers: {
     ...createLifecycleHandlers(store),
+    ...createIdleHandlers(store),
   },
 });
 

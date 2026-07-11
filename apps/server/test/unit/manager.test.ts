@@ -69,14 +69,21 @@ describe('NpcManager', () => {
   });
 
   it('ログイン失敗は last_error に記録して他の NPC の処理を続ける', async () => {
-    const { store, npc, client, manager } = setup();
+    const store = createTestStore();
+    const npc = store.createNpc(testNpcInput());
     const npc2 = store.createNpc(testNpcInput({ agent_id: 'npc-world-agent-2', name: '二郎' }));
-    let calls = 0;
-    client.loginImpl = async () => {
-      calls += 1;
-      if (calls === 1) throw new WorldApiError(0, null, 'connection refused');
-      return { node_id: '2-2' };
+    const failingClient = new MockWorldClient();
+    failingClient.loginImpl = async () => {
+      throw new WorldApiError(0, null, 'connection refused');
     };
+    const okClient = new MockWorldClient();
+    const manager = new NpcManager({
+      store,
+      handlers: {},
+      createClient: (target) =>
+        (target.npc_id === npc.npc_id ? failingClient : okClient) as unknown as WorldClient,
+      logger: silentLogger,
+    });
 
     await manager.healthCheck();
 
