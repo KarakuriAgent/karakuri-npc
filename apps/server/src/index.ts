@@ -1,3 +1,4 @@
+import { Server } from 'node:http';
 import { join } from 'node:path';
 
 import { serve } from '@hono/node-server';
@@ -67,10 +68,26 @@ manager.start().catch((error) => {
   console.error('NpcManager start failed:', error);
 });
 
+let shuttingDown = false;
+
 async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) {
+    console.warn(`${signal} received again, exiting immediately`);
+    process.exit(1);
+  }
+  shuttingDown = true;
   console.info(`${signal} received, shutting down...`);
+  // 排水が詰まっても必ず終了できるようにする保険
+  setTimeout(() => {
+    console.error('graceful shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 10_000).unref();
   // 順序が重要: 新規リクエストの受付を止めてから NPC キューを排水し、最後に DB を閉じる。
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
+    // SSE(/api/events) などの持続接続が残っていると close が完了しないため強制切断する
+    if (server instanceof Server) server.closeAllConnections();
+  });
   await manager.stop();
   db.close();
   process.exit(0);
