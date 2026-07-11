@@ -4,22 +4,39 @@ import { serve } from '@hono/node-server';
 
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
+import { LlmService } from './llm/llm-service.js';
+import { ConversationEngine } from './runtime/conversation-engine.js';
+import { createConversationHandlers } from './runtime/handlers/conversation.js';
 import { createIdleHandlers } from './runtime/handlers/idle.js';
 import { createLifecycleHandlers } from './runtime/handlers/lifecycle.js';
 import { NpcManager } from './runtime/manager.js';
+import { MemoryService } from './runtime/memory.js';
 import { openDatabase } from './storage/database.js';
+import { ConversationStore } from './storage/conversation-store.js';
 import { NpcStore } from './storage/npc-store.js';
 
 const config = loadConfig();
 const db = openDatabase(join(config.DATA_DIR, 'npc.sqlite'));
 const store = new NpcStore(db);
+const conversations = new ConversationStore(db);
+
+const llm = new LlmService({ config, store });
+const engine = new ConversationEngine({ llm, conversations });
+const memory = new MemoryService({ conversations, engine });
+const idleHandlers = createIdleHandlers(store);
 
 const manager = new NpcManager({
   store,
-  // 会話 / transfer 系ハンドラは Phase 3-4 で追加する。未登録 kind は fallback（wait）で処理される。
+  // transfer 系ハンドラは Phase 4 で追加する。未登録 kind は fallback（wait）で処理される。
   handlers: {
     ...createLifecycleHandlers(store),
-    ...createIdleHandlers(store),
+    ...idleHandlers,
+    ...createConversationHandlers({
+      conversations,
+      engine,
+      memory,
+      idleHandler: idleHandlers.idle_reminder,
+    }),
   },
 });
 

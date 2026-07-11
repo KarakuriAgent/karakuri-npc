@@ -80,6 +80,8 @@ function migrate(db: Db): void {
       conversation_id   TEXT NOT NULL,
       npc_id            TEXT NOT NULL,
       participants_json TEXT NOT NULL DEFAULT '[]',
+      -- 1:1 会話のときの相手 agent_id（会話をまたいだ履歴の引き当てに使う。グループは NULL）
+      counterpart_agent_id TEXT,
       status            TEXT NOT NULL DEFAULT 'active',
       started_at        INTEGER NOT NULL,
       ended_at          INTEGER,
@@ -87,14 +89,19 @@ function migrate(db: Db): void {
       summarized        INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (conversation_id, npc_id)
     );
+    CREATE INDEX IF NOT EXISTS idx_conversations_counterpart
+      ON conversations(npc_id, counterpart_agent_id, started_at DESC);
 
     CREATE TABLE IF NOT EXISTS conversation_messages (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
       conversation_id   TEXT NOT NULL,
       npc_id            TEXT NOT NULL,
       turn              INTEGER,
-      speaker_agent_id  TEXT NOT NULL,
+      -- 通知 payload は名前ベースのため agent_id が特定できないことがある（NULL 許容）
+      speaker_agent_id  TEXT,
       speaker_name      TEXT,
+      -- 自 NPC の発言か（プロンプトの user/assistant 振り分けに使う）
+      is_self           INTEGER NOT NULL DEFAULT 0,
       message           TEXT NOT NULL,
       created_at        INTEGER NOT NULL
     );
