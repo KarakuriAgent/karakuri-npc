@@ -19,11 +19,15 @@ function safeEqual(a: string, b: string): boolean {
 export function issueSessionCookie(c: Context, password: string): void {
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const token = `${expiresAt}.${sign(String(expiresAt), password)}`;
+  // https 経由（またはリバースプロキシ配下）では Secure を付け、平文経路への cookie 送出を防ぐ。
+  const forwardedProto = c.req.header('x-forwarded-proto');
+  const secure = forwardedProto === 'https' || new URL(c.req.url).protocol === 'https:';
   setCookie(c, COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'Lax',
     path: '/',
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
+    ...(secure ? { secure: true } : {}),
   });
 }
 

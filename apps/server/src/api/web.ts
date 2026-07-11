@@ -45,6 +45,13 @@ function mask(secret: string): string {
   return secret.length <= 4 ? '****' : `****${secret.slice(-4)}`;
 }
 
+/** クエリの limit を 1〜max に丸める（負値で SQLite の LIMIT が無制限化するのを防ぐ）。 */
+function clampLimit(raw: string | undefined, fallback: number, max: number): number {
+  const value = Number(raw ?? fallback);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(Math.floor(value), 1), max);
+}
+
 function npcDto(npc: Npc, store: NpcStore): Record<string, unknown> {
   const runtime = store.getRuntime(npc.npc_id);
   return {
@@ -190,12 +197,25 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
       if (error instanceof WorldApiError) {
         // 429 のときも放置せず、位置指定なしで復帰させておく（オフライン化を防ぐ）
         if (error.status === 429) {
-          await client.login().catch(() => {});
+          let recovered = false;
+          try {
+            const result = await client.login();
+            store.patchRuntime(npc.npc_id, {
+              logged_in: true,
+              node_id: typeof result.node_id === 'string' ? result.node_id : null,
+              agent_state: 'idle',
+            });
+            recovered = true;
+          } catch {
+            // 復帰ログインも失敗。ヘルスループに任せる（下の healthCheck 起動）
+          }
           void manager.healthCheck().catch(() => {});
           return c.json(
             {
               error: 'rate_limited',
-              message: `位置指定ログインはクールダウン中です（約${error.retryAfterSeconds ?? '?'}秒後に再試行できます）。現在位置で復帰しました。`,
+              message: `位置指定ログインはクールダウン中です（約${error.retryAfterSeconds ?? '?'}秒後に再試行できます）。${
+                recovered ? '現在位置で復帰しました。' : '復帰ログインにも失敗したため、ヘルスチェックが自動で再試行します。'
+              }`,
               retry_after_seconds: error.retryAfterSeconds,
             },
             429,
@@ -272,10 +292,19 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
     return c.body(null, 204);
   });
 
+  /** ダッシュボードの横断イベントフィード。 */
+  app.get('/api/logs', auth, (c) => {
+    const limit = clampLimit(c.req.query('limit'), 30, 100);
+    return c.json({
+      deliveries: store.listRecentDeliveriesAll(limit),
+      commands: store.listRecentCommandLogAll(limit),
+    });
+  });
+
   app.get('/api/npcs/:id/logs', auth, (c) => {
     const npc = store.getNpc(c.req.param('id'));
     if (!npc) return c.json({ error: 'not_found' }, 404);
-    const limit = Math.min(Number(c.req.query('limit') ?? 50) || 50, 200);
+    const limit = clampLimit(c.req.query('limit'), 50, 200);
     return c.json({
       deliveries: store.listDeliveries(npc.npc_id, limit),
       commands: store.listCommandLog(npc.npc_id, limit),

@@ -41,6 +41,7 @@ const manager = new NpcManager({
     }),
     ...createTransferHandlers({
       store,
+      conversations,
       engine,
       idleHandler: idleHandlers.idle_reminder,
     }),

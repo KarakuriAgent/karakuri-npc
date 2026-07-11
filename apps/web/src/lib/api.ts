@@ -97,7 +97,16 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     onUnauthorized?.();
   }
   const text = await response.text();
-  const parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  let parsed: Record<string, unknown> = {};
+  if (text) {
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      // Hono 既定の 500 などプレーンテキスト応答。本文をそのままエラーメッセージにする。
+      if (!response.ok) throw new ApiError(response.status, 'error', text.slice(0, 200));
+      throw new ApiError(response.status, 'invalid_response', `不正なレスポンス: ${text.slice(0, 100)}`);
+    }
+  }
   if (!response.ok) {
     throw new ApiError(
       response.status,

@@ -67,7 +67,7 @@ karakuri-world と揃え、運用知識を共有する。
 | ランタイム | Node.js 20+ / TypeScript / ESM |
 | サーバー | Hono（webhook 受信 + WebUI 向け API + 静的配信） |
 | DB | SQLite（better-sqlite3、`${DATA_DIR}/npc.sqlite`） |
-| フロント | React + Vite + Tailwind CSS + Zustand |
+| フロント | React + Vite + Tailwind CSS（状態管理は React ローカル state で足りる規模） |
 | LLM | プロバイダ抽象。**OpenAI 互換 API をデフォルト**（LiteLLM proxy / Ollama 等に接続可）、Anthropic ネイティブも実装 |
 | バリデーション | Zod |
 | テスト | Vitest |
@@ -165,8 +165,10 @@ CREATE TABLE conversation_messages (
   conversation_id   TEXT NOT NULL,
   npc_id            TEXT NOT NULL,
   turn              INTEGER,
-  speaker_agent_id  TEXT NOT NULL,
+  -- 通知 payload は名前ベースで agent_id を特定できないことがあるため NULL 許容
+  speaker_agent_id  TEXT,
   speaker_name      TEXT,
+  is_self           INTEGER NOT NULL DEFAULT 0, -- 自 NPC の発言か（プロンプトの role 振り分け用）
   message           TEXT NOT NULL,
   created_at        INTEGER NOT NULL
 );
@@ -359,7 +361,8 @@ user/assistant 交互:
 | kind | 処理 |
 |---|---|
 | `transfer_request`（単独譲渡の着信） | policy.receive に従い `transfer_accept` / `transfer_reject`（`llm` はペルソナ+記憶で判断）。インベントリ上限（world 側 10 スロット）超過見込みなら reject |
-| `transfer_sent` / `_accepted` / `_rejected` / `_timeout` / `_cancelled` / `_escrow_lost` | state-mirror 更新 + ログ（money/items の増減を反映）。相手の記憶に「◯◯をくれた/渡した」を追記するイベントとして記憶ジョブへ |
+| `transfer_accepted` | 既知の相手（記憶あり）なら記憶に「◯◯を受け取った/渡した」を機械的に一行追記（payload が名前ベースのため未知の相手はスキップ）。次の行動 choices は idle 契機として委譲 |
+| `transfer_sent` / `_rejected` / `_timeout` / `_cancelled` / `_escrow_lost` | ログのみ（money/items は perception / get_status 同期で反映）。次の行動 choices は idle 契機として委譲 |
 
 NPC から渡す方は §6.3 の会話中 `give`（v1 はこれのみ。単独 `transfer` コマンドの自発実行は idle 契機に choices へ出た場合のみ将来対応）。
 
@@ -381,7 +384,7 @@ NPC から渡す方は §6.3 の会話中 `give`（v1 はこれのみ。単独 `
    - NPC カード一覧: 稼働状態（ログイン中/停止/エラー）、現在地（world_id + node + location_label）、状態、所持金、最終活動時刻
    - 直近のイベントフィード（deliveries + command_log を時系列表示、SSE でライブ更新）
 2. **NPC 作成・編集** (`/npcs/new`, `/npcs/:id/edit`)
-   - 接続: world_base_url / agent_id / api_key / webhook_secret（world 側で発行した値を貼り付け）+「接続テスト」ボタン（login → logout で疎通確認）
+   - 接続: world_base_url / agent_id / api_key / webhook_secret（world 側で発行した値を貼り付け）+「接続テスト」ボタン（存在しない通知 ID の取得を試み 401 なら認証 NG と判定。login/logout は行わないため位置指定ログインのクールダウンを消費しない）
    - 人格: name / persona（テキストエリア）
    - 移動: mode、home_node_id、anchor + range（数値入力。v1 はマップピッカーなし）、move_probability、rest_duration
    - 会話: accept / inactive_check / max_history_pairs
@@ -410,8 +413,10 @@ POST   /api/npcs/:id/test-connection 接続テスト
 GET    /api/npcs/:id/conversations, /conversations/:cid/messages
 GET|PUT|DELETE /api/npcs/:id/memories/:agentId
 GET    /api/npcs/:id/logs            deliveries + command_log
-GET    /api/events                   SSE（ダッシュボード用）
+GET    /api/events                   SSE（3秒ごとに全NPCのランタイム状態サマリをpush）
 GET|PUT /api/settings
+GET    /api/meta                     webhook公開URL等
+POST   /api/auth/login, GET /api/auth/status
 ```
 
 ## 9. 設定（環境変数）
@@ -424,8 +429,9 @@ WEB_PASSWORD=                       # 任意。WebUI 認証
 OPENAI_BASE_URL= / OPENAI_API_KEY=  # 既定 LLM（OpenAI 互換）
 ANTHROPIC_API_KEY=                  # anthropic 使用時
 LLM_MAX_CONCURRENCY=4
-LOG_DIR=./logs
 ```
+
+ログは stdout / stderr に出力する（ファイルログは持たない。永続化は systemd / docker 側で行う）。
 
 ローカル開発: world の SSRF ガードにより webhook は https + 公開ホスト必須。
 `cloudflared tunnel --url http://localhost:8300` 等で公開 URL を作って `WEBHOOK_PUBLIC_BASE_URL` に設定する手順を README に書く。

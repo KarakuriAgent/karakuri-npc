@@ -8,6 +8,56 @@ interface SummaryEvent {
   at: number;
 }
 
+interface FeedResponse {
+  deliveries: Array<{
+    delivery_id: string;
+    npc_name: string | null;
+    kind: string;
+    status: string;
+    error: string | null;
+    received_at: number;
+  }>;
+  commands: Array<{
+    id: number;
+    npc_name: string | null;
+    command: string;
+    accepted: number;
+    error: string | null;
+    executed_at: number;
+  }>;
+}
+
+interface FeedEntry {
+  key: string;
+  at: number;
+  npcName: string;
+  label: string;
+  ok: boolean;
+  detail: string | null;
+}
+
+function buildFeed(feed: FeedResponse): FeedEntry[] {
+  const entries: FeedEntry[] = [
+    ...feed.deliveries.map((d) => ({
+      key: `d-${d.delivery_id}`,
+      at: d.received_at,
+      npcName: d.npc_name ?? '-',
+      label: `📩 ${d.kind}`,
+      ok: d.status !== 'failed',
+      detail: d.error,
+    })),
+    ...feed.commands.map((c) => ({
+      key: `c-${c.id}`,
+      at: c.executed_at,
+      npcName: c.npc_name ?? '-',
+      label: `▶ ${c.command}`,
+      ok: c.accepted === 1,
+      detail: c.error,
+    })),
+  ];
+  return entries.sort((a, b) => b.at - a.at).slice(0, 30);
+}
+
 function statusBadge(npc: NpcDto): { label: string; className: string } {
   if (!npc.enabled) return { label: '停止', className: 'bg-slate-200 text-slate-600' };
   if (npc.runtime?.logged_in) return { label: '稼働中', className: 'bg-emerald-100 text-emerald-700' };
@@ -17,6 +67,7 @@ function statusBadge(npc: NpcDto): { label: string; className: string } {
 
 export default function Dashboard() {
   const [npcs, setNpcs] = useState<NpcDto[]>([]);
+  const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   const reload = () => {
@@ -30,18 +81,41 @@ export default function Dashboard() {
 
   useEffect(() => {
     reload();
-    // SSE でランタイム状態のライブ更新（NPC の増減や設定変更は再取得で拾う）
-    const source = new EventSource('/api/events');
-    source.addEventListener('summary', (event) => {
-      const summary = JSON.parse((event as MessageEvent).data) as SummaryEvent;
-      setNpcs((current) =>
-        current.map((npc) => {
-          const update = summary.npcs.find((s) => s.npc_id === npc.npc_id);
-          return update ? { ...npc, enabled: update.enabled, runtime: update.runtime } : npc;
-        }),
-      );
-    });
-    return () => source.close();
+    // SSE でランタイム状態のライブ更新（NPC の増減や設定変更は再取得で拾う）。
+    // EventSource は非 200 応答で自動再接続しないため、切断時は 10 秒後に張り直す。
+    // 401（セッション切れ）は api() 経由の確認リクエストでログイン画面へ誘導する。
+    let source: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
+    const connect = () => {
+      if (disposed) return;
+      source = new EventSource('/api/events');
+      source.addEventListener('summary', (event) => {
+        const summary = JSON.parse((event as MessageEvent).data) as SummaryEvent;
+        setNpcs((current) =>
+          current.map((npc) => {
+            const update = summary.npcs.find((s) => s.npc_id === npc.npc_id);
+            return update ? { ...npc, enabled: update.enabled, runtime: update.runtime } : npc;
+          }),
+        );
+      });
+      source.onerror = () => {
+        source?.close();
+        void api('/api/npcs').catch(() => {}); // 401 なら onUnauthorized が発火する
+        reconnectTimer = setTimeout(connect, 10_000);
+      };
+    };
+    connect();
+    // 横断イベントフィードは 5 秒ポーリング
+    const loadFeed = () => void api<FeedResponse>('/api/logs').then((data) => setFeed(buildFeed(data))).catch(() => {});
+    loadFeed();
+    const feedTimer = setInterval(loadFeed, 5000);
+    return () => {
+      disposed = true;
+      source?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      clearInterval(feedTimer);
+    };
   }, []);
 
   const toggle = async (npc: NpcDto) => {
@@ -120,6 +194,26 @@ export default function Dashboard() {
             );
           })}
         </div>
+      )}
+
+      {feed.length > 0 && (
+        <section className="mt-6 rounded-lg bg-white p-4 shadow-sm">
+          <h2 className="mb-2 font-semibold">直近のイベント</h2>
+          <div className="max-h-80 overflow-y-auto">
+            <table className="w-full text-left text-xs">
+              <tbody>
+                {feed.map((entry) => (
+                  <tr key={entry.key} className="border-t border-slate-100" title={entry.detail ?? ''}>
+                    <td className="py-1.5 whitespace-nowrap text-slate-500">{formatTime(entry.at)}</td>
+                    <td className="px-2 font-medium">{entry.npcName}</td>
+                    <td>{entry.label}</td>
+                    <td className={entry.ok ? 'text-emerald-600' : 'text-red-600'}>{entry.ok ? 'OK' : 'NG'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
     </div>
   );

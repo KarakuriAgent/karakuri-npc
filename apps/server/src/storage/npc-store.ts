@@ -355,6 +355,28 @@ export class NpcStore {
       .all(npcId, limit) as Array<Record<string, unknown>>;
   }
 
+  /** ダッシュボードのイベントフィード用: 全 NPC 横断の直近 delivery（NPC 名付き）。 */
+  listRecentDeliveriesAll(limit = 30): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT d.delivery_id, d.npc_id, n.name AS npc_name, d.kind, d.status, d.error, d.received_at
+         FROM deliveries d LEFT JOIN npcs n ON n.npc_id = d.npc_id
+         ORDER BY d.received_at DESC, d.delivery_id LIMIT ?`,
+      )
+      .all(limit) as Array<Record<string, unknown>>;
+  }
+
+  /** ダッシュボードのイベントフィード用: 全 NPC 横断の直近コマンド（NPC 名付き）。 */
+  listRecentCommandLogAll(limit = 30): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT c.id, c.npc_id, n.name AS npc_name, c.command, c.accepted, c.error, c.executed_at
+         FROM command_log c LEFT JOIN npcs n ON n.npc_id = c.npc_id
+         ORDER BY c.executed_at DESC, c.id DESC LIMIT ?`,
+      )
+      .all(limit) as Array<Record<string, unknown>>;
+  }
+
   // ---- settings ----
 
   getSetting(key: string): string | null {
