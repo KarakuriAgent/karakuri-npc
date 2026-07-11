@@ -1,0 +1,19 @@
+{
+  "name": "karakuri-npc-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "author": "株式会社0235",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:server": "npm run dev -w @karakuri-npc/server",
+    "build": "npm run build -w @karakuri-npc/server",
+    "start": "npm start -w @karakuri-npc/server",
+    "typecheck": "npm run typecheck -w @karakuri-npc/server",
+    "test": "npm test -w @karakuri-npc/server"
+  }
+}
