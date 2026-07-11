@@ -1,6 +1,6 @@
 # Karakuri NPC
 
-[karakuri-world](../karakuri-world) に接続する **LLM 駆動 NPC の管理・実行サーバー**。
+karakuri-world に接続する **LLM 駆動 NPC の管理・実行サーバー**。
 
 1 プロセスで複数の NPC を稼働させ、WebUI から作成・編集・監視ができる。
 NPC は world 上で指定位置に出現し、設定した範囲をランダムに移動（または定住）し、
