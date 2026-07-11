@@ -93,16 +93,16 @@ export interface NpcCreateInput {
   agent_id: string;
   api_key: string;
   webhook_secret: string;
-  persona?: string;
-  home_node_id?: string | null;
-  enabled?: boolean;
+  persona?: string | undefined;
+  home_node_id?: string | null | undefined;
+  enabled?: boolean | undefined;
   movement?: unknown;
   conversation?: unknown;
   transfer?: unknown;
   llm?: unknown;
 }
 
-export type NpcUpdateInput = Partial<NpcCreateInput>;
+export type NpcUpdateInput = { [K in keyof NpcCreateInput]?: NpcCreateInput[K] | undefined };
 
 export class NpcStore {
   constructor(private readonly db: Db) {}

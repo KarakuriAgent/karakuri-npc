@@ -11,9 +11,11 @@
   },
   "scripts": {
     "dev:server": "npm run dev -w @karakuri-npc/server",
-    "build": "npm run build -w @karakuri-npc/server",
+    "build": "npm run build -w @karakuri-npc/server && npm run build -w @karakuri-npc/web",
     "start": "npm start -w @karakuri-npc/server",
-    "typecheck": "npm run typecheck -w @karakuri-npc/server",
-    "test": "npm test -w @karakuri-npc/server"
+    "typecheck": "npm run typecheck -w @karakuri-npc/server && npm run typecheck -w @karakuri-npc/web",
+    "test": "npm test -w @karakuri-npc/server",
+    "dev:web": "npm run dev -w @karakuri-npc/web",
+    "build:web": "npm run build -w @karakuri-npc/web"
   }
 }

@@ -47,7 +47,13 @@ const manager = new NpcManager({
   },
 });
 
-const app = createApp({ store, manager });
+const app = createApp({
+  config,
+  store,
+  conversations,
+  manager,
+  webDistDir: join(import.meta.dirname, '../../web/dist'),
+});
 
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.info(`karakuri-npc server listening on :${info.port}`);
