@@ -33,6 +33,20 @@ const createWorldClient = worldClientFactory(config.WORLD_BASE_URL);
 const manager = new NpcManager({
   store,
   createClient: createWorldClient,
+  // スケジュール時間外のログオフを会話終了まで先送りするための参照
+  hasActiveConversation: (npcId) => conversations.getActiveConversation(npcId) !== null,
+  // ログアウト = world 側で会話が強制終了されるため、ローカルも閉じて記憶更新まで回す
+  closeActiveConversation: (npcId, reason) => {
+    const active = conversations.getActiveConversation(npcId);
+    if (!active) return;
+    conversations.endConversation(npcId, active.conversation_id, reason);
+    const npc = store.getNpc(npcId);
+    if (npc) {
+      void memory.summarizeConversation(npc, active.conversation_id).catch((error) => {
+        console.warn(`[${npcId}] memory job (logout) failed: ${String(error)}`);
+      });
+    }
+  },
   // 未登録 kind は fallback（wait）で処理される。
   handlers: {
     ...createLifecycleHandlers(store),

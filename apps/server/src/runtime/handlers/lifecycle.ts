@@ -10,7 +10,7 @@ import type { NotificationHandlers } from '../npc-runtime.js';
 export function createLifecycleHandlers(store: NpcStore): NotificationHandlers {
   return {
     agent_logged_out: ({ npc }) => {
-      store.patchRuntime(npc.npc_id, { logged_in: false, agent_state: null });
+      store.patchRuntime(npc.npc_id, { logged_in: false, agent_state: null, logout_pending_since: null });
       return null;
     },
   };

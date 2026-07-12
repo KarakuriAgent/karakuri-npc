@@ -16,6 +16,8 @@ services:
       # コンテナ内では固定（.env の PORT/DATA_DIR より優先される）
       PORT: 8300
       DATA_DIR: /app/data
+      # ログイン時間帯の判定はサーバーのローカル時刻に従うため日本時間に固定する
+      TZ: Asia/Tokyo
     volumes:
       - npc-data:/app/data
     restart: unless-stopped

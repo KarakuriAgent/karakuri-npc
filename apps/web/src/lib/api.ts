@@ -10,6 +10,19 @@ export interface NpcRuntimeState {
   last_command_at: number | null;
   last_error: string | null;
   status_synced_at: number | null;
+  logout_pending_since: number | null;
+}
+
+export interface ScheduleWindow {
+  /** 開始時刻が属する曜日（0=日〜6=土）。省略 or 空 = 毎日。 */
+  days?: number[];
+  start: string;
+  end: string;
+}
+
+export interface ScheduleConfig {
+  windows: ScheduleWindow[];
+  logout_grace_minutes: number;
 }
 
 export interface MovementConfig {
@@ -34,6 +47,9 @@ export interface NpcDto {
   conversation: { accept: string; inactive_check: string; max_history_pairs: number };
   transfer: { receive: string; give_enabled: boolean };
   llm: { provider?: string; base_url?: string; api_key?: string; model?: string; temperature?: number; system_prompt_extra?: string };
+  schedule: ScheduleConfig;
+  /** 現在時刻がログイン時間帯内か（サーバー TZ で判定済み）。 */
+  schedule_active: boolean;
   created_at: number;
   updated_at: number;
   runtime: NpcRuntimeState | null;

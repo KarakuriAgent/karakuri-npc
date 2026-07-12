@@ -4,7 +4,13 @@ import { Link } from 'react-router-dom';
 import { api, formatTime, type NpcDto, type NpcRuntimeState } from '../lib/api';
 
 interface SummaryEvent {
-  npcs: Array<{ npc_id: string; name: string; enabled: boolean; runtime: NpcRuntimeState | null }>;
+  npcs: Array<{
+    npc_id: string;
+    name: string;
+    enabled: boolean;
+    schedule_active: boolean;
+    runtime: NpcRuntimeState | null;
+  }>;
   at: number;
 }
 
@@ -60,7 +66,12 @@ function buildFeed(feed: FeedResponse): FeedEntry[] {
 
 function statusBadge(npc: NpcDto): { label: string; className: string } {
   if (!npc.enabled) return { label: '停止', className: 'bg-slate-200 text-slate-600' };
-  if (npc.runtime?.logged_in) return { label: '稼働中', className: 'bg-emerald-100 text-emerald-700' };
+  if (npc.runtime?.logged_in) {
+    if (npc.runtime.logout_pending_since) return { label: 'ログオフ待ち', className: 'bg-orange-100 text-orange-700' };
+    return { label: '稼働中', className: 'bg-emerald-100 text-emerald-700' };
+  }
+  // 時間外のオフラインは正常状態（過去の last_error より優先して表示する）
+  if (!npc.schedule_active) return { label: '時間外', className: 'bg-indigo-100 text-indigo-700' };
   if (npc.runtime?.last_error) return { label: 'エラー', className: 'bg-red-100 text-red-700' };
   return { label: '接続中…', className: 'bg-amber-100 text-amber-700' };
 }
@@ -95,7 +106,9 @@ export default function Dashboard() {
         setNpcs((current) =>
           current.map((npc) => {
             const update = summary.npcs.find((s) => s.npc_id === npc.npc_id);
-            return update ? { ...npc, enabled: update.enabled, runtime: update.runtime } : npc;
+            return update
+              ? { ...npc, enabled: update.enabled, schedule_active: update.schedule_active, runtime: update.runtime }
+              : npc;
           }),
         );
       });

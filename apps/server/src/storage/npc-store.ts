@@ -6,6 +6,7 @@ import {
   conversationPolicySchema,
   llmConfigSchema,
   movementConfigSchema,
+  scheduleConfigSchema,
   transferPolicySchema,
 } from '../types/npc.js';
 
@@ -23,6 +24,7 @@ interface NpcRow {
   conversation_json: string;
   transfer_json: string;
   llm_json: string;
+  schedule_json: string;
   created_at: number;
   updated_at: number;
 }
@@ -39,6 +41,7 @@ interface RuntimeRow {
   last_command_at: number | null;
   last_error: string | null;
   status_synced_at: number | null;
+  logout_pending_since: number | null;
 }
 
 function parseJson(text: string): unknown {
@@ -66,6 +69,7 @@ function npcFromRow(row: NpcRow): Npc {
     conversation: conversationPolicySchema.parse(parseJson(row.conversation_json)),
     transfer: transferPolicySchema.parse(parseJson(row.transfer_json)),
     llm: llmConfigSchema.parse(parseJson(row.llm_json)),
+    schedule: scheduleConfigSchema.parse(parseJson(row.schedule_json)),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -84,6 +88,7 @@ function runtimeFromRow(row: RuntimeRow): NpcRuntimeState {
     last_command_at: row.last_command_at,
     last_error: row.last_error,
     status_synced_at: row.status_synced_at,
+    logout_pending_since: row.logout_pending_since,
   };
 }
 
@@ -100,6 +105,7 @@ export interface NpcCreateInput {
   conversation?: unknown;
   transfer?: unknown;
   llm?: unknown;
+  schedule?: unknown;
 }
 
 export type NpcUpdateInput = { [K in keyof NpcCreateInput]?: NpcCreateInput[K] | undefined };
@@ -113,9 +119,9 @@ export class NpcStore {
       .prepare(
         `INSERT INTO npcs(
           npc_id, name, enabled, agent_id, api_key, webhook_secret,
-          persona, rules, home_node_id, movement_json, conversation_json, transfer_json, llm_json,
+          persona, rules, home_node_id, movement_json, conversation_json, transfer_json, llm_json, schedule_json,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         npcId,
@@ -131,6 +137,7 @@ export class NpcStore {
         JSON.stringify(conversationPolicySchema.parse(input.conversation ?? {})),
         JSON.stringify(transferPolicySchema.parse(input.transfer ?? {})),
         JSON.stringify(llmConfigSchema.parse(input.llm ?? {})),
+        JSON.stringify(scheduleConfigSchema.parse(input.schedule ?? {})),
         now,
         now,
       );
@@ -156,13 +163,19 @@ export class NpcStore {
       conversation: conversationPolicySchema.parse(patch.conversation ?? current.conversation),
       transfer: transferPolicySchema.parse(patch.transfer ?? current.transfer),
       llm: llmConfigSchema.parse(patch.llm ?? current.llm),
+      // 部分 patch で未指定フィールドが zod の default に巻き戻らないよう既存値とマージする
+      schedule: scheduleConfigSchema.parse(
+        patch.schedule === undefined || typeof patch.schedule !== 'object' || patch.schedule === null
+          ? current.schedule
+          : { ...current.schedule, ...patch.schedule },
+      ),
     };
     this.db
       .prepare(
         `UPDATE npcs SET
           name = ?, enabled = ?, agent_id = ?, api_key = ?, webhook_secret = ?,
           persona = ?, rules = ?, home_node_id = ?, movement_json = ?, conversation_json = ?, transfer_json = ?,
-          llm_json = ?, updated_at = ?
+          llm_json = ?, schedule_json = ?, updated_at = ?
         WHERE npc_id = ?`,
       )
       .run(
@@ -178,6 +191,7 @@ export class NpcStore {
         JSON.stringify(next.conversation),
         JSON.stringify(next.transfer),
         JSON.stringify(next.llm),
+        JSON.stringify(next.schedule),
         now,
         npcId,
       );
@@ -236,6 +250,7 @@ export class NpcStore {
     if (patch.last_command_at !== undefined) push('last_command_at', patch.last_command_at);
     if (patch.last_error !== undefined) push('last_error', patch.last_error);
     if (patch.status_synced_at !== undefined) push('status_synced_at', patch.status_synced_at);
+    if (patch.logout_pending_since !== undefined) push('logout_pending_since', patch.logout_pending_since);
     if (assignments.length === 0) return;
     values.push(npcId);
     this.db

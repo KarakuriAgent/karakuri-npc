@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NpcManager } from '../../src/runtime/manager.js';
 import { WorldApiError, type WorldClient } from '../../src/world/client.js';
@@ -6,7 +6,7 @@ import { MockWorldClient, createTestStore, testNpcInput } from '../helpers/test-
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {} };
 
-function setup(npcOverrides = {}) {
+function setup(npcOverrides = {}, managerOverrides = {}) {
   const store = createTestStore();
   const npc = store.createNpc(testNpcInput(npcOverrides));
   const client = new MockWorldClient();
@@ -15,6 +15,7 @@ function setup(npcOverrides = {}) {
     handlers: {},
     createClient: () => client as unknown as WorldClient,
     logger: silentLogger,
+    ...managerOverrides,
   });
   return { store, npc, client, manager };
 }
@@ -89,5 +90,110 @@ describe('NpcManager', () => {
 
     expect(store.getRuntime(npc.npc_id)?.last_error).toContain('connection refused');
     expect(store.getRuntime(npc2.npc_id)?.logged_in).toBe(true);
+  });
+});
+
+describe('NpcManager スケジュール', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // 2026-07-13 は月曜日
+  const daySchedule = { windows: [{ start: '09:00', end: '18:00' }], logout_grace_minutes: 30 };
+
+  it('時間帯内ならログインさせ、時間帯前ならログインさせない', async () => {
+    vi.useFakeTimers();
+    const { store, npc, client, manager } = setup({ schedule: daySchedule });
+
+    vi.setSystemTime(new Date('2026-07-13T08:00:00'));
+    await manager.healthCheck();
+    expect(client.loginCalls).toHaveLength(0);
+
+    vi.setSystemTime(new Date('2026-07-13T09:00:30'));
+    await manager.healthCheck();
+    expect(client.loginCalls).toHaveLength(1);
+    expect(store.getRuntime(npc.npc_id)?.logged_in).toBe(true);
+  });
+
+  it('時間帯終了後は即ログアウトせず logout_pending_since を立てる', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T18:01:00'));
+    const { store, npc, client, manager } = setup({ schedule: daySchedule });
+    store.patchRuntime(npc.npc_id, { logged_in: true });
+
+    await manager.healthCheck();
+
+    expect(client.logoutCalls).toBe(0);
+    expect(store.getRuntime(npc.npc_id)?.logout_pending_since).toBe(Date.now());
+  });
+
+  it('猶予を超えたら強制ログアウトする', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T18:01:00'));
+    const { store, npc, client, manager } = setup({ schedule: daySchedule });
+    store.patchRuntime(npc.npc_id, { logged_in: true });
+    await manager.healthCheck();
+    expect(client.logoutCalls).toBe(0);
+
+    vi.setSystemTime(new Date('2026-07-13T18:32:00'));
+    await manager.healthCheck();
+
+    expect(client.logoutCalls).toBe(1);
+    const runtime = store.getRuntime(npc.npc_id);
+    expect(runtime?.logged_in).toBe(false);
+    expect(runtime?.logout_pending_since).toBeNull();
+  });
+
+  it('時間帯に戻ったらログオフ保留を解除する', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T18:01:00'));
+    const { store, npc, client, manager } = setup({ schedule: daySchedule });
+    store.patchRuntime(npc.npc_id, { logged_in: true });
+    await manager.healthCheck();
+    expect(store.getRuntime(npc.npc_id)?.logout_pending_since).not.toBeNull();
+
+    // （手動でスケジュールを広げた等で）時間帯内に戻ったケース
+    vi.setSystemTime(new Date('2026-07-14T09:05:00'));
+    await manager.healthCheck();
+
+    expect(client.logoutCalls).toBe(0);
+    expect(store.getRuntime(npc.npc_id)?.logout_pending_since).toBeNull();
+  });
+
+  it('ログアウト時にローカルの active な会話を閉じる', async () => {
+    const closed: Array<{ npcId: string; reason: string }> = [];
+    const { store, npc, client, manager } = setup(
+      { enabled: false },
+      { closeActiveConversation: (npcId: string, reason: string) => closed.push({ npcId, reason }) },
+    );
+    store.patchRuntime(npc.npc_id, { logged_in: true });
+
+    await manager.healthCheck();
+
+    expect(client.logoutCalls).toBe(1);
+    expect(closed).toEqual([{ npcId: npc.npc_id, reason: 'npc_logged_out' }]);
+  });
+
+  it('PATCH で schedule を部分指定しても未指定フィールドは維持される', () => {
+    const { store, npc } = setup({
+      schedule: { windows: [{ start: '09:00', end: '18:00' }], logout_grace_minutes: 60 },
+    });
+
+    const updated = store.updateNpc(npc.npc_id, { schedule: { logout_grace_minutes: 10 } });
+
+    expect(updated?.schedule.windows).toHaveLength(1);
+    expect(updated?.schedule.logout_grace_minutes).toBe(10);
+  });
+
+  it('手動停止（enabled=false）はスケジュールに関係なく即ログアウトする', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T12:00:00'));
+    const { store, npc, client, manager } = setup({ enabled: false, schedule: daySchedule });
+    store.patchRuntime(npc.npc_id, { logged_in: true });
+
+    await manager.healthCheck();
+
+    expect(client.logoutCalls).toBe(1);
+    expect(store.getRuntime(npc.npc_id)?.logged_in).toBe(false);
   });
 });

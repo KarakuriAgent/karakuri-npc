@@ -28,6 +28,27 @@ export const transferPolicySchema = z.object({
 });
 export type TransferPolicy = z.infer<typeof transferPolicySchema>;
 
+/**
+ * ログイン時間帯。start > end は日をまたぐ（例 22:00〜02:00）。
+ * days は開始時刻が属する曜日（0=日〜6=土）。省略 or 空配列 = 毎日。
+ */
+export const scheduleWindowSchema = z
+  .object({
+    days: z.array(z.number().int().min(0).max(6)).optional(),
+    start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  })
+  .refine((window) => window.start !== window.end, { message: 'start と end は同じ時刻にできません' });
+export type ScheduleWindow = z.infer<typeof scheduleWindowSchema>;
+
+export const scheduleConfigSchema = z.object({
+  /** 空 = スケジュールなし（従来通り常時ログイン）。 */
+  windows: z.array(scheduleWindowSchema).max(20).default([]),
+  /** 時間帯終了後、会話などが続いていても強制ログオフするまでの猶予（分）。 */
+  logout_grace_minutes: z.number().int().min(0).max(720).default(30),
+});
+export type ScheduleConfig = z.infer<typeof scheduleConfigSchema>;
+
 export const llmConfigSchema = z.object({
   provider: z.enum(['openai_compatible', 'anthropic']).optional(),
   base_url: z.string().url().optional(),
@@ -54,6 +75,7 @@ export interface Npc {
   conversation: ConversationPolicy;
   transfer: TransferPolicy;
   llm: LlmConfig;
+  schedule: ScheduleConfig;
   created_at: number;
   updated_at: number;
 }
@@ -70,6 +92,8 @@ export interface NpcRuntimeState {
   last_command_at: number | null;
   last_error: string | null;
   status_synced_at: number | null;
+  /** スケジュール時間外になった時刻。次のターン境界での安全ログオフの合図（猶予超過で強制ログオフ）。 */
+  logout_pending_since: number | null;
 }
 
 export type DeliveryStatus = 'received' | 'processing' | 'done' | 'failed' | 'skipped';

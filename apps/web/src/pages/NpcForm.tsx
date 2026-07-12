@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { api, ApiError, type NpcDto } from '../lib/api';
+import { api, ApiError, type NpcDto, type ScheduleWindow } from '../lib/api';
+
+const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
 const emptyForm = {
   name: '',
@@ -27,6 +29,8 @@ const emptyForm = {
   llm_api_key: '',
   llm_model: '',
   llm_temperature: '',
+  schedule_windows: [] as ScheduleWindow[],
+  logout_grace_minutes: '30',
 };
 
 type FormState = typeof emptyForm;
@@ -56,6 +60,8 @@ function toForm(npc: NpcDto): FormState {
     llm_api_key: npc.llm.api_key ?? '',
     llm_model: npc.llm.model ?? '',
     llm_temperature: npc.llm.temperature?.toString() ?? '',
+    schedule_windows: npc.schedule.windows,
+    logout_grace_minutes: String(npc.schedule.logout_grace_minutes),
   };
 }
 
@@ -92,6 +98,15 @@ function toPayload(form: FormState, isNew: boolean): Record<string, unknown> {
       ...(form.llm_model ? { model: form.llm_model } : {}),
       ...(form.llm_temperature !== '' ? { temperature: Number(form.llm_temperature) } : {}),
     },
+    schedule: {
+      windows: form.schedule_windows.map((window) => ({
+        ...(window.days && window.days.length > 0 ? { days: window.days } : {}),
+        start: window.start,
+        end: window.end,
+      })),
+      // 空欄のまま保存されたとき 0（=会話中でも即強制ログオフ）に化けないよう既定値に倒す
+      logout_grace_minutes: form.logout_grace_minutes === '' ? 30 : Number(form.logout_grace_minutes),
+    },
   };
 }
 
@@ -123,6 +138,20 @@ export default function NpcForm() {
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateWindow = (index: number, patch: Partial<ScheduleWindow>) => {
+    set(
+      'schedule_windows',
+      form.schedule_windows.map((window, i) => (i === index ? { ...window, ...patch } : window)),
+    );
+  };
+
+  const toggleWindowDay = (index: number, day: number) => {
+    const days = form.schedule_windows[index]?.days ?? [];
+    updateWindow(index, {
+      days: days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort(),
+    });
   };
 
   const submit = async (event: FormEvent) => {
@@ -274,6 +303,82 @@ export default function NpcForm() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="space-y-4 rounded-lg bg-white p-5 shadow-sm">
+        <h2 className="font-semibold">ログイン時間帯</h2>
+        <p className="text-xs text-slate-500">
+          未設定なら（稼働 ON の間）常時ログインします。時間帯を設定すると、その時間だけワールドにログインし、
+          終了時刻を過ぎたら行動の区切り（会話中なら会話終了後）に自動でログオフします。曜日未選択は毎日扱いです。
+        </p>
+        {form.schedule_windows.map((window, index) => (
+          <div key={index} className="flex flex-wrap items-center gap-3 rounded border border-slate-200 p-3">
+            <div className="flex gap-1">
+              {DAY_LABELS.map((label, day) => (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => toggleWindowDay(index, day)}
+                  className={`h-7 w-7 rounded text-xs ${
+                    (window.days ?? []).includes(day)
+                      ? 'bg-slate-900 text-white'
+                      : 'border border-slate-300 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                required
+                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                value={window.start}
+                onChange={(e) => updateWindow(index, { start: e.target.value })}
+              />
+              <span className="text-sm text-slate-500">〜</span>
+              <input
+                type="time"
+                required
+                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                value={window.end}
+                onChange={(e) => updateWindow(index, { end: e.target.value })}
+              />
+              {window.start > window.end && <span className="text-xs text-slate-500">（翌日まで）</span>}
+            </div>
+            <button
+              type="button"
+              onClick={() => set('schedule_windows', form.schedule_windows.filter((_, i) => i !== index))}
+              className="ml-auto rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
+            >
+              削除
+            </button>
+          </div>
+        ))}
+        <div className="flex items-end justify-between gap-4">
+          <button
+            type="button"
+            onClick={() => set('schedule_windows', [...form.schedule_windows, { start: '09:00', end: '18:00' }])}
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+          >
+            ＋ 時間帯を追加
+          </button>
+          {form.schedule_windows.length > 0 && (
+            <div className="w-48">
+              <Field label="ログオフ猶予（分）" hint="終了後も会話等が続く場合、この時間で強制ログオフ">
+                <input
+                  type="number"
+                  min={0}
+                  max={720}
+                  className={inputClass}
+                  value={form.logout_grace_minutes}
+                  onChange={(e) => set('logout_grace_minutes', e.target.value)}
+                />
+              </Field>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="space-y-4 rounded-lg bg-white p-5 shadow-sm">

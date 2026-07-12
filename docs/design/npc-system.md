@@ -103,6 +103,7 @@ CREATE TABLE npcs (
   conversation_json TEXT NOT NULL DEFAULT '{}',-- ConversationPolicy（下記）
   transfer_json     TEXT NOT NULL DEFAULT '{}',-- TransferPolicy（下記）
   llm_json          TEXT NOT NULL DEFAULT '{}',-- LlmConfig（モデル・温度等の上書き）
+  schedule_json     TEXT NOT NULL DEFAULT '{}',-- ScheduleConfig（ログイン時間帯。空 = 常時ログイン）
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
 );
@@ -119,7 +120,8 @@ CREATE TABLE npc_runtime (
   last_notification_at INTEGER,
   last_command_at   INTEGER,
   last_error        TEXT,
-  status_synced_at  INTEGER                    -- get_status で最後に正確に同期した時刻
+  status_synced_at  INTEGER,                   -- get_status で最後に正確に同期した時刻
+  logout_pending_since INTEGER                 -- スケジュール時間外になった時刻（安全ログオフ待ち）
 );
 
 -- webhook 受信ログ（冪等性 + 再処理 + ダッシュボード）
@@ -219,6 +221,12 @@ interface LlmConfig {
   temperature?: number;
   system_prompt_extra?: string;
 }
+
+interface ScheduleConfig {
+  // ログイン時間帯（複数可）。空 = 常時ログイン。詳細は 6.2.1
+  windows: Array<{ days?: number[]; start: string; end: string }>; // "HH:MM"
+  logout_grace_minutes: number; // 時間帯終了後の強制ログオフまでの猶予（既定 30）
+}
 ```
 
 ## 5. サーバー構成（apps/server）
@@ -299,9 +307,23 @@ idle 契機の通知を受信
 
 ### 6.2 ログイン・開始位置
 
-- `enabled` な NPC は NpcManager が常時ログイン状態を維持（起動時 + 5 分間隔のヘルスループ + `not_logged_in` 検知時）
+- `enabled` な NPC は NpcManager がログイン状態を維持（起動時 + 1 分間隔のヘルスループ + `not_logged_in` 検知時）
 - ログインは `home_node_id` があれば `{ node_id: home_node_id }` 付きで実行。**429（クールダウン）/ 400 のときは位置指定なしで再ログイン**（前回位置に復帰）
 - WebUI から「ホームに戻す」操作 = logout → 位置指定 login（クールダウン中はその旨を表示）
+
+### 6.2.1 ログイン時間帯（スケジュール）
+
+NPC ごとに複数のログイン時間帯（`schedule_json`）を設定できる。あるべき状態 = 「`enabled` かつ現在時刻がいずれかの時間帯内」で、判定はヘルスループ（1 分間隔）が行う。
+
+- `windows: [{ days?, start, end }]`。`days` は開始時刻が属する曜日（0=日〜6=土、省略 = 毎日）。`start > end` は日またぎ（例 22:00〜02:00）。**windows が空なら従来通り常時ログイン**
+- 判定はサーバーのローカル時刻（`TZ` 環境変数に従う）
+- **ログオフは即時に切らず安全に行う**:
+  1. 次の通知処理（ターン境界）で NpcRuntime が時間外を自ら判定してログオフする。idle 契機（wait_completed 等）では新しい行動を起こさず離脱。会話・アイテム授受など応答が必要な通知は設定値通り処理してから離脱し、新規 `conversation_request` だけは reject する。会話中なら会話が閉じた通知の処理後にログオフ（後続の idle 委譲行動は破棄）
+  2. ヘルスループは時間帯終了の検知時に `npc_runtime.logout_pending_since` を立てる（猶予の計測起点 + ダッシュボードの「ログオフ待ち」表示用。ターン境界ログオフ自体はこのフラグに依存しない）
+  3. 保険: `logout_grace_minutes`（既定 30 分）を超えたら会話中でもヘルスループが強制ログオフ（長い wait 中で通知が来ないケースもこれで回収）
+- ログアウト時はローカルの active な会話も必ず閉じる（NpcManager.logoutNpc → closeActiveConversation）。強制ログオフで会話行が active のまま残ると以後ずっと「会話中」扱いになるため
+- ダッシュボードの手動停止（`enabled=false`）はスケジュールに関係なく従来通り即時ログアウト（ターン境界側でも enabled=false なら会話中を問わず即ログオフ）
+- 時間帯判定の結果は `schedule_active` として NPC DTO / SSE summary に載せ、WebUI はそれを表示に使う（クライアント側で再判定しない）
 
 ### 6.3 会話（LLM）
 

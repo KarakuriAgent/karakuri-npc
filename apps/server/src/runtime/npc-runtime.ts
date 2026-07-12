@@ -3,7 +3,18 @@ import type { Npc } from '../types/npc.js';
 import type { AgentNotification, AgentNotificationKind } from '../types/world.js';
 import { WorldApiError, WorldClient } from '../world/client.js';
 import { chooseFallbackCommand, type CommandChoice } from './handlers/fallback.js';
+import { isScheduleActive } from './schedule.js';
 import { applyCommandResultToMirror, applyNotificationToMirror } from './state-mirror.js';
+
+/** 自由に行動を選べるだけの通知。スケジュール時間外は応答不要なのでログオフに直行できる。 */
+const IDLE_TRIGGER_KINDS = new Set([
+  'agent_logged_in',
+  'movement_completed',
+  'wait_completed',
+  'idle_reminder',
+  'info_choices',
+  'server_announcement',
+]);
 
 export interface NotificationContext {
   npc: Npc;
@@ -31,6 +42,10 @@ export interface NpcRuntimeDeps {
   handlers: NotificationHandlers;
   createClient: (npc: Npc) => WorldClient;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
+  /** スケジュール時間外のターン境界ログオフの実行を委譲する（NpcManager.logoutNpc）。 */
+  logout?: (npc: Npc) => Promise<void>;
+  /** 会話中はログオフを会話終了まで先送りするための参照。未指定なら常に会話なし扱い。 */
+  hasActiveConversation?: (npcId: string) => boolean;
 }
 
 /**
@@ -44,6 +59,8 @@ export class NpcRuntime {
   private readonly handlers: NotificationHandlers;
   private readonly createClient: (npc: Npc) => WorldClient;
   private readonly logger: Pick<Console, 'info' | 'warn' | 'error'>;
+  private readonly logout: ((npc: Npc) => Promise<void>) | null;
+  private readonly hasActiveConversation: (npcId: string) => boolean;
   private queue: Promise<void> = Promise.resolve();
 
   constructor(npcId: string, deps: NpcRuntimeDeps) {
@@ -52,6 +69,8 @@ export class NpcRuntime {
     this.handlers = deps.handlers;
     this.createClient = deps.createClient;
     this.logger = deps.logger ?? console;
+    this.logout = deps.logout ?? null;
+    this.hasActiveConversation = deps.hasActiveConversation ?? (() => false);
   }
 
   /** 通知処理をキュー末尾に積む。戻りはキュー完了を待たない。 */
@@ -111,8 +130,47 @@ export class NpcRuntime {
     applyNotificationToMirror(this.store, npc.npc_id, notification);
 
     try {
-      const decision = await this.decideChoice(npc, notificationId, notification);
-      await this.executeDecision(npc, notificationId, decision, client);
+      // ダッシュボードからの手動停止は即時扱い: 会話中でも行動せずログオフする
+      // （通常は healthCheck が先にログアウトさせるため、これはその隙間の通知を拾う保険）。
+      if (!npc.enabled && this.logout) {
+        this.logger.info(`[${npc.npc_id}] disabled, logging out at turn boundary`);
+        await this.logout(npc);
+        this.store.updateDelivery(deliveryId, { status: 'done', error: null });
+        return;
+      }
+
+      // スケジュール時間外のターン境界ログオフ:
+      // - 新しい行動（移動・待機）は起こさない
+      // - 会話・アイテム授受など応答が必要な通知は設定値通り処理してから離脱する
+      // - 会話中は会話が閉じた通知の処理後にログオフする
+      const offSchedule = !isScheduleActive(npc.schedule, new Date());
+      const inConversationBefore = this.hasActiveConversation(npc.npc_id);
+
+      let decision: CommandDecision;
+      if (offSchedule && notification.kind === 'conversation_request') {
+        // ログオフ間際に始まる新規会話は（既存会話の有無によらず）受けない
+        decision = { command: 'conversation_reject', params: {} };
+      } else if (offSchedule && !inConversationBefore && IDLE_TRIGGER_KINDS.has(notification.kind)) {
+        decision = null;
+      } else {
+        decision = await this.decideChoice(npc, notificationId, notification);
+      }
+
+      const inConversationAfter = this.hasActiveConversation(npc.npc_id);
+      // ハンドラ内で会話が閉じた（conversation_ended 等）直後の idle 委譲行動は時間外では破棄する
+      const discardDecision = offSchedule && inConversationBefore && !inConversationAfter;
+      if (!discardDecision) {
+        await this.executeDecision(npc, notificationId, decision, client);
+      }
+      if (
+        offSchedule &&
+        this.logout &&
+        !inConversationAfter &&
+        this.store.getRuntime(npc.npc_id)?.logged_in
+      ) {
+        this.logger.info(`[${npc.npc_id}] off schedule, logging out at turn boundary`);
+        await this.logout(npc);
+      }
       this.store.updateDelivery(deliveryId, { status: 'done', error: null });
     } catch (error) {
       this.recordFailure(deliveryId, npc, 'handler_failed', error);

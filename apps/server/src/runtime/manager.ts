@@ -1,11 +1,13 @@
 import type { NpcStore } from '../storage/npc-store.js';
-import type { Npc } from '../types/npc.js';
+import type { Npc, NpcRuntimeState } from '../types/npc.js';
 import { WorldApiError, WorldClient } from '../world/client.js';
 import type { WebhookDispatch } from '../webhook/receiver.js';
 import type { NotificationHandlers } from './npc-runtime.js';
 import { NpcRuntime } from './npc-runtime.js';
+import { isScheduleActive } from './schedule.js';
 
-const HEALTH_INTERVAL_MS = 5 * 60 * 1000;
+// reconciliation は保険だが、スケジュール遷移（ログイン開始/終了）も拾うため分単位で回す
+const HEALTH_INTERVAL_MS = 60 * 1000;
 /** 通知 TTL（30 分）を超えた未処理 delivery は再処理しない。 */
 const RECOVERY_WINDOW_MS = 30 * 60 * 1000;
 
@@ -15,6 +17,14 @@ export interface NpcManagerDeps {
   createClient: (npc: Npc) => WorldClient;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
   healthIntervalMs?: number;
+  /** スケジュール時間外のログオフを会話終了まで先送りするための参照。未指定なら常に会話なし扱い。 */
+  hasActiveConversation?: (npcId: string) => boolean;
+  /**
+   * ログアウト時にローカルの会話状態を閉じる（記憶更新も呼び出し側で行う）。
+   * 会話中の強制ログオフで active な会話行が残留すると、以後ずっと「会話中」扱いになり
+   * ターン境界ログオフが効かなくなるため、ログアウトと同時に必ず閉じる。
+   */
+  closeActiveConversation?: (npcId: string, reason: string) => void;
 }
 
 /**
@@ -28,6 +38,8 @@ export class NpcManager {
   private readonly createClient: (npc: Npc) => WorldClient;
   private readonly logger: Pick<Console, 'info' | 'warn' | 'error'>;
   private readonly healthIntervalMs: number;
+  private readonly hasActiveConversation: (npcId: string) => boolean;
+  private readonly closeActiveConversation: (npcId: string, reason: string) => void;
   private readonly runtimes = new Map<string, NpcRuntime>();
   private healthTimer: NodeJS.Timeout | null = null;
 
@@ -37,6 +49,8 @@ export class NpcManager {
     this.createClient = deps.createClient;
     this.logger = deps.logger ?? console;
     this.healthIntervalMs = deps.healthIntervalMs ?? HEALTH_INTERVAL_MS;
+    this.hasActiveConversation = deps.hasActiveConversation ?? (() => false);
+    this.closeActiveConversation = deps.closeActiveConversation ?? (() => {});
   }
 
   /** 初回ヘルスチェックが失敗しても定期ループとリカバリは必ず開始する。 */
@@ -67,6 +81,8 @@ export class NpcManager {
         handlers: this.handlers,
         createClient: this.createClient,
         logger: this.logger,
+        logout: (npc) => this.logoutNpc(npc),
+        hasActiveConversation: this.hasActiveConversation,
       });
       this.runtimes.set(npcId, runtime);
     }
@@ -74,7 +90,7 @@ export class NpcManager {
   }
 
   /**
-   * enabled な NPC をログインさせ、disabled でログイン中の NPC をログアウトさせる。
+   * あるべき状態（enabled かつスケジュール時間帯内）と現実を突き合わせて login/logout する。
    * 各 NPC は独立した world API 呼び出しのため並列に処理する（1 体の遅延で全体を塞がない）。
    */
   async healthCheck(): Promise<void> {
@@ -82,10 +98,19 @@ export class NpcManager {
       this.store.listNpcs().map(async (npc) => {
         const runtime = this.store.getRuntime(npc.npc_id);
         try {
-          if (npc.enabled && !runtime?.logged_in) {
-            await this.loginNpc(npc);
-          } else if (!npc.enabled && runtime?.logged_in) {
-            await this.logoutNpc(npc);
+          const shouldBeOnline = npc.enabled && isScheduleActive(npc.schedule, new Date());
+          if (shouldBeOnline) {
+            if (runtime?.logout_pending_since) {
+              this.store.patchRuntime(npc.npc_id, { logout_pending_since: null });
+            }
+            if (!runtime?.logged_in) await this.loginNpc(npc);
+          } else if (runtime?.logged_in) {
+            if (!npc.enabled) {
+              // ダッシュボードからの手動停止は従来通り即時ログアウト
+              await this.logoutNpc(npc);
+            } else {
+              await this.deferredLogout(npc, runtime);
+            }
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -94,6 +119,24 @@ export class NpcManager {
         }
       }),
     );
+  }
+
+  /**
+   * スケジュール時間外の安全ログオフ。即時には切らず logout_pending_since を立て、
+   * 実際のログオフは NpcRuntime が次のターン境界（会話中なら会話終了後）に行う。
+   * 通知が来ない場合や会話が長引く場合の保険として、猶予超過で強制ログオフする。
+   */
+  private async deferredLogout(npc: Npc, runtime: NpcRuntimeState): Promise<void> {
+    const now = Date.now();
+    const pendingSince = runtime.logout_pending_since ?? now;
+    if (!runtime.logout_pending_since) {
+      this.store.patchRuntime(npc.npc_id, { logout_pending_since: pendingSince });
+      this.logger.info(`[${npc.npc_id}] schedule window closed, logout pending`);
+    }
+    if (now - pendingSince >= npc.schedule.logout_grace_minutes * 60_000) {
+      this.logger.warn(`[${npc.npc_id}] logout grace period exceeded, forcing logout`);
+      await this.logoutNpc(npc);
+    }
   }
 
   /**
@@ -141,7 +184,9 @@ export class NpcManager {
       if (!(error instanceof WorldApiError && error.status === 409)) throw error;
       // 409 = 既にログアウト済み。状態だけ合わせる。
     }
-    this.store.patchRuntime(npc.npc_id, { logged_in: false, agent_state: null });
+    this.store.patchRuntime(npc.npc_id, { logged_in: false, agent_state: null, logout_pending_since: null });
+    // world 側はログアウトで会話を強制終了する。ended 通知が届かなくても整合するようローカルも閉じる。
+    this.closeActiveConversation(npc.npc_id, 'npc_logged_out');
     this.logger.info(`[${npc.npc_id}] logged out`);
   }
 

@@ -32,6 +32,7 @@ function migrate(db: Db): void {
       conversation_json TEXT NOT NULL DEFAULT '{}',
       transfer_json     TEXT NOT NULL DEFAULT '{}',
       llm_json          TEXT NOT NULL DEFAULT '{}',
+      schedule_json     TEXT NOT NULL DEFAULT '{}',
       created_at        INTEGER NOT NULL,
       updated_at        INTEGER NOT NULL
     );
@@ -47,7 +48,8 @@ function migrate(db: Db): void {
       last_notification_at INTEGER,
       last_command_at   INTEGER,
       last_error        TEXT,
-      status_synced_at  INTEGER
+      status_synced_at  INTEGER,
+      logout_pending_since INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS deliveries (
@@ -133,6 +135,15 @@ function migrateNpcColumns(db: Db): void {
   );
   if (!columns.has('rules')) {
     db.exec(`ALTER TABLE npcs ADD COLUMN rules TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!columns.has('schedule_json')) {
+    db.exec(`ALTER TABLE npcs ADD COLUMN schedule_json TEXT NOT NULL DEFAULT '{}'`);
+  }
+  const runtimeColumns = new Set(
+    (db.pragma('table_info(npc_runtime)') as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!runtimeColumns.has('logout_pending_since')) {
+    db.exec(`ALTER TABLE npc_runtime ADD COLUMN logout_pending_since INTEGER`);
   }
   // world ベース URL は NPC ごとではなく .env の WORLD_BASE_URL に一本化した
   if (columns.has('world_base_url')) {

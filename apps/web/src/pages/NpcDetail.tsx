@@ -57,7 +57,15 @@ export default function NpcDetail() {
         <div>
           <p className="text-xs text-slate-500">状態</p>
           <p className="font-medium">
-            {npc.enabled ? (npc.runtime?.logged_in ? '🟢 稼働中' : '🟡 接続中') : '⚪ 停止'}
+            {!npc.enabled
+              ? '⚪ 停止'
+              : npc.runtime?.logged_in
+                ? npc.runtime.logout_pending_since
+                  ? '🟠 ログオフ待ち'
+                  : '🟢 稼働中'
+                : !npc.schedule_active
+                  ? '🌙 時間外'
+                  : '🟡 接続中'}
           </p>
         </div>
         <div>

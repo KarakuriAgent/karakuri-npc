@@ -9,6 +9,7 @@ import {
   loadGlobalLlmSettings,
 } from '../llm/provider.js';
 import type { NpcManager } from '../runtime/manager.js';
+import { isScheduleActive } from '../runtime/schedule.js';
 import type { ConversationStore } from '../storage/conversation-store.js';
 import type { NpcStore } from '../storage/npc-store.js';
 import type { Npc } from '../types/npc.js';
@@ -16,6 +17,7 @@ import {
   conversationPolicySchema,
   llmConfigSchema,
   movementConfigSchema,
+  scheduleConfigSchema,
   transferPolicySchema,
 } from '../types/npc.js';
 import { WorldApiError, type CreateWorldClient, type WorldClient } from '../world/client.js';
@@ -36,6 +38,7 @@ const npcCreateSchema = z.object({
   conversation: conversationPolicySchema.partial().optional(),
   transfer: transferPolicySchema.partial().optional(),
   llm: llmConfigSchema.optional(),
+  schedule: scheduleConfigSchema.partial().optional(),
 });
 
 const npcUpdateSchema = npcCreateSchema.partial();
@@ -68,6 +71,9 @@ function npcDto(npc: Npc, store: NpcStore): Record<string, unknown> {
     conversation: npc.conversation,
     transfer: npc.transfer,
     llm: { ...npc.llm, ...(npc.llm.api_key ? { api_key: mask(npc.llm.api_key) } : {}) },
+    schedule: npc.schedule,
+    // 時間帯判定はサーバーの TZ 依存のためクライアントに推測させず結果を渡す
+    schedule_active: isScheduleActive(npc.schedule, new Date()),
     created_at: npc.created_at,
     updated_at: npc.updated_at,
     runtime,
@@ -211,6 +217,8 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
         node_id: typeof result.node_id === 'string' ? result.node_id : npc.home_node_id,
         agent_state: 'idle',
         last_error: null,
+        // 古いログオフ保留を持ち越すと再ログイン直後に猶予超過と誤判定される
+        logout_pending_since: null,
       });
       return c.json({ ok: true, node_id: result.node_id ?? npc.home_node_id });
     } catch (error) {
@@ -224,6 +232,7 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
               logged_in: true,
               node_id: typeof result.node_id === 'string' ? result.node_id : null,
               agent_state: 'idle',
+              logout_pending_since: null,
             });
             recovered = true;
           } catch {
@@ -383,6 +392,7 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
           npc_id: npc.npc_id,
           name: npc.name,
           enabled: npc.enabled,
+          schedule_active: isScheduleActive(npc.schedule, new Date()),
           runtime: store.getRuntime(npc.npc_id),
         }));
         await stream.writeSSE({ event: 'summary', data: JSON.stringify({ npcs, at: Date.now() }) });

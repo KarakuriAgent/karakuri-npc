@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NpcRuntime } from '../../src/runtime/npc-runtime.js';
 import type { NpcStore } from '../../src/storage/npc-store.js';
@@ -218,5 +218,195 @@ describe('NpcRuntime', () => {
 
     expect(store.getRuntime(npc.npc_id)?.logged_in).toBe(false);
     expect(client.commandCalls).toHaveLength(0);
+  });
+});
+
+describe('NpcRuntime スケジュール時間外のログオフ', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // 2026-07-13T20:00 は時間帯（09:00〜18:00）の外
+  const daySchedule = { windows: [{ start: '09:00', end: '18:00' }], logout_grace_minutes: 30 };
+
+  function setupScheduled(options: { inConversation?: boolean; handlers?: object } = {}) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T20:00:00'));
+    const store = createTestStore();
+    const npc = store.createNpc(testNpcInput({ schedule: daySchedule }));
+    store.patchRuntime(npc.npc_id, { logged_in: true });
+    const client = new MockWorldClient();
+    const logoutCalls: string[] = [];
+    let conversationActive = options.inConversation ?? false;
+    const runtime = new NpcRuntime(npc.npc_id, {
+      store,
+      handlers: options.handlers ?? {},
+      createClient: () => client as unknown as WorldClient,
+      logger: silentLogger,
+      logout: async (target) => {
+        logoutCalls.push(target.npc_id);
+        store.patchRuntime(target.npc_id, { logged_in: false, logout_pending_since: null });
+      },
+      hasActiveConversation: () => conversationActive,
+    });
+    return { store, npc, client, runtime, logoutCalls, endConversation: () => (conversationActive = false) };
+  }
+
+  it('時間外の通知は行動せずログオフする', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled();
+    client.notifications.set('notif-1', testNotification());
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls).toHaveLength(0);
+    expect(logoutCalls).toEqual([npc.npc_id]);
+    expect(store.getDelivery('delivery-1')?.status).toBe('done');
+  });
+
+  it('時間外の新規会話リクエストは reject してからログオフする', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled();
+    client.notifications.set(
+      'notif-1',
+      testNotification({
+        kind: 'conversation_request',
+        choices: [
+          { command: 'conversation_accept', label: '受ける', required_params: ['message'] },
+          { command: 'conversation_reject', label: '断る' },
+        ],
+      }),
+    );
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls).toEqual([
+      { notificationId: 'notif-1', command: 'conversation_reject', params: {} },
+    ]);
+    expect(logoutCalls).toEqual([npc.npc_id]);
+  });
+
+  it('会話中は時間外でも通常処理を続ける', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled({
+      inConversation: true,
+      handlers: { idle_reminder: () => ({ command: 'conversation_speak', params: { message: 'はい' } }) },
+    });
+    client.notifications.set('notif-1', testNotification());
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls[0]).toMatchObject({ command: 'conversation_speak' });
+    expect(logoutCalls).toEqual([]);
+  });
+
+  it('ハンドラ内で会話が終わったら後続の行動を破棄してログオフする', async () => {
+    // conversation_ended 相当: ハンドラが会話を閉じ、次の行動（wait）を返すケース
+    const { store, npc, client, runtime, logoutCalls, endConversation } = setupScheduled({
+      inConversation: true,
+      handlers: {
+        idle_reminder: () => {
+          endConversation();
+          return { command: 'wait', params: { duration: 1 } };
+        },
+      },
+    });
+    client.notifications.set('notif-1', testNotification());
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls).toHaveLength(0);
+    expect(logoutCalls).toEqual([npc.npc_id]);
+    expect(store.getDelivery('delivery-1')?.status).toBe('done');
+  });
+
+  it('時間外でも応答が必要な通知（transfer 等）は処理してからログオフする', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled({
+      handlers: { transfer_request: () => ({ command: 'transfer_accept', params: {} }) },
+    });
+    client.notifications.set(
+      'notif-1',
+      testNotification({
+        kind: 'transfer_request',
+        choices: [
+          { command: 'transfer_accept', label: '受け取る' },
+          { command: 'transfer_reject', label: '断る' },
+        ],
+      }),
+    );
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls).toEqual([{ notificationId: 'notif-1', command: 'transfer_accept', params: {} }]);
+    expect(logoutCalls).toEqual([npc.npc_id]);
+  });
+
+  it('会話中でも時間外の新規会話リクエストは reject する', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled({ inConversation: true });
+    client.notifications.set(
+      'notif-1',
+      testNotification({
+        kind: 'conversation_request',
+        choices: [
+          { command: 'conversation_accept', label: '受ける', required_params: ['message'] },
+          { command: 'conversation_reject', label: '断る' },
+        ],
+      }),
+    );
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls).toEqual([{ notificationId: 'notif-1', command: 'conversation_reject', params: {} }]);
+    // 既存会話が続いているうちはログオフしない
+    expect(logoutCalls).toEqual([]);
+  });
+
+  it('手動停止（enabled=false）中の通知は会話中でも行動せずログオフする', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled({ inConversation: true });
+    store.updateNpc(npc.npc_id, { enabled: false });
+    client.notifications.set('notif-1', testNotification());
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls).toHaveLength(0);
+    expect(logoutCalls).toEqual([npc.npc_id]);
+    expect(store.getDelivery('delivery-1')?.status).toBe('done');
+  });
+
+  it('既にログアウト済みなら重ねてログオフしない', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled();
+    store.patchRuntime(npc.npc_id, { logged_in: false });
+    client.notifications.set('notif-1', testNotification());
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(logoutCalls).toEqual([]);
+    expect(store.getDelivery('delivery-1')?.status).toBe('done');
+  });
+
+  it('時間帯内なら通常通り行動する', async () => {
+    const { store, npc, client, runtime, logoutCalls } = setupScheduled();
+    vi.setSystemTime(new Date('2026-07-13T12:00:00'));
+    client.notifications.set('notif-1', testNotification());
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    expect(client.commandCalls[0]).toMatchObject({ command: 'wait' });
+    expect(logoutCalls).toEqual([]);
   });
 });
