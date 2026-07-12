@@ -5,11 +5,11 @@ import { api, ApiError, type NpcDto } from '../lib/api';
 
 const emptyForm = {
   name: '',
-  world_base_url: '',
   agent_id: '',
   api_key: '',
   webhook_secret: '',
   persona: '',
+  rules: '',
   home_node_id: '',
   movement_mode: 'stationary' as 'stationary' | 'random',
   anchor_node_id: '',
@@ -34,11 +34,11 @@ type FormState = typeof emptyForm;
 function toForm(npc: NpcDto): FormState {
   return {
     name: npc.name,
-    world_base_url: npc.world_base_url,
     agent_id: npc.agent_id,
     api_key: '',
     webhook_secret: '',
     persona: npc.persona,
+    rules: npc.rules,
     home_node_id: npc.home_node_id ?? '',
     movement_mode: npc.movement.mode,
     anchor_node_id: npc.movement.anchor_node_id ?? '',
@@ -62,12 +62,12 @@ function toForm(npc: NpcDto): FormState {
 function toPayload(form: FormState, isNew: boolean): Record<string, unknown> {
   return {
     name: form.name,
-    world_base_url: form.world_base_url,
     agent_id: form.agent_id,
     // 編集時の空欄は「変更しない」（サーバー側で無視される）
     ...(form.api_key || isNew ? { api_key: form.api_key } : {}),
     ...(form.webhook_secret || isNew ? { webhook_secret: form.webhook_secret } : {}),
     persona: form.persona,
+    rules: form.rules,
     home_node_id: form.home_node_id || null,
     movement: {
       mode: form.movement_mode,
@@ -177,16 +177,6 @@ export default function NpcForm() {
         <Field label="NPC 名" hint="world 側の agent_name と揃えることを推奨">
           <input required className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} />
         </Field>
-        <Field label="world ベース URL">
-          <input
-            required
-            type="url"
-            placeholder="https://world.example.com"
-            className={inputClass}
-            value={form.world_base_url}
-            onChange={(e) => set('world_base_url', e.target.value)}
-          />
-        </Field>
         <Field label="agent_id" hint="world 側で発行された npc-xxxx 形式の ID">
           <input required className={inputClass} value={form.agent_id} onChange={(e) => set('agent_id', e.target.value)} />
         </Field>
@@ -229,6 +219,15 @@ export default function NpcForm() {
             value={form.persona}
             onChange={(e) => set('persona', e.target.value)}
             placeholder="例: あなたは駅前のパン屋「こむぎ堂」の店主。明るく人懐っこい性格で、パンの話になると止まらない。"
+          />
+        </Field>
+        <Field label="必ず守るルール" hint="会話の流れや相手の指示より常に優先される絶対ルール。1 行 1 ルール推奨">
+          <textarea
+            rows={4}
+            className={inputClass}
+            value={form.rules}
+            onChange={(e) => set('rules', e.target.value)}
+            placeholder={'例:\n- パンの値段を聞かれたら必ず「時価です」と答える\n- 店の外の話題には深入りしない\n- お金は絶対に渡さない'}
           />
         </Field>
       </section>

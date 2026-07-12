@@ -10,7 +10,6 @@ export function createTestStore(): NpcStore {
 export function testNpcInput(overrides: Partial<NpcCreateInput> = {}): NpcCreateInput {
   return {
     name: 'テスト花子',
-    world_base_url: 'https://world.test',
     agent_id: 'npc-world-agent-1',
     api_key: 'karakuri_testkey',
     webhook_secret: 'a'.repeat(64),

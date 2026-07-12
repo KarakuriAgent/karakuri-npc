@@ -39,6 +39,7 @@ cp apps/server/env.example apps/server/.env
 |---|---|---|
 | `PORT` | - | サーバーポート（既定 8300） |
 | `DATA_DIR` | - | SQLite の置き場所（既定 `./data`） |
+| `WORLD_BASE_URL` | ✅ | karakuri-world のベース URL（全 NPC 共通） |
 | `WEBHOOK_PUBLIC_BASE_URL` | ✅ | world から見えるこのサーバーの公開 https URL |
 | `WEB_PASSWORD` | - | WebUI のパスワード（未設定なら認証なし。localhost 運用専用） |
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL` | ✅(いずれかの LLM) | 既定 LLM（OpenAI 互換。LiteLLM proxy / Ollama 等も可） |

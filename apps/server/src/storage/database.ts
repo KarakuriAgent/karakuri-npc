@@ -22,11 +22,11 @@ function migrate(db: Db): void {
       npc_id            TEXT PRIMARY KEY,
       name              TEXT NOT NULL,
       enabled           INTEGER NOT NULL DEFAULT 0,
-      world_base_url    TEXT NOT NULL,
       agent_id          TEXT NOT NULL UNIQUE,
       api_key           TEXT NOT NULL,
       webhook_secret    TEXT NOT NULL,
       persona           TEXT NOT NULL DEFAULT '',
+      rules             TEXT NOT NULL DEFAULT '',
       home_node_id      TEXT,
       movement_json     TEXT NOT NULL DEFAULT '{}',
       conversation_json TEXT NOT NULL DEFAULT '{}',
@@ -123,4 +123,35 @@ function migrate(db: Db): void {
       value TEXT NOT NULL
     );
   `);
+  migrateNpcColumns(db);
+}
+
+/** 既存 DB の npcs テーブルを現行スキーマへ追従させる。 */
+function migrateNpcColumns(db: Db): void {
+  const columns = new Set(
+    (db.pragma('table_info(npcs)') as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!columns.has('rules')) {
+    db.exec(`ALTER TABLE npcs ADD COLUMN rules TEXT NOT NULL DEFAULT ''`);
+  }
+  // world ベース URL は NPC ごとではなく .env の WORLD_BASE_URL に一本化した
+  if (columns.has('world_base_url')) {
+    // 不可逆な DROP の前に旧値を settings へ退避する（.env への移行漏れからの復元用）
+    const rows = db.prepare('SELECT npc_id, world_base_url FROM npcs').all() as Array<{
+      npc_id: string;
+      world_base_url: string;
+    }>;
+    if (rows.length > 0) {
+      db.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING').run(
+        'migration.world_base_url_backup',
+        JSON.stringify(rows),
+      );
+      const distinct = [...new Set(rows.map((row) => row.world_base_url))];
+      console.warn(
+        `npcs.world_base_url カラムを削除します。.env の WORLD_BASE_URL に設定してください: ${distinct.join(', ')}` +
+          '（旧値は settings の migration.world_base_url_backup に退避済み）',
+      );
+    }
+    db.exec('ALTER TABLE npcs DROP COLUMN world_base_url');
+  }
 }

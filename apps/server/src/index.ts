@@ -16,6 +16,7 @@ import { MemoryService } from './runtime/memory.js';
 import { openDatabase } from './storage/database.js';
 import { ConversationStore } from './storage/conversation-store.js';
 import { NpcStore } from './storage/npc-store.js';
+import { worldClientFactory } from './world/client.js';
 
 const config = loadConfig();
 const db = openDatabase(join(config.DATA_DIR, 'npc.sqlite'));
@@ -27,8 +28,11 @@ const engine = new ConversationEngine({ llm, conversations });
 const memory = new MemoryService({ conversations, engine });
 const idleHandlers = createIdleHandlers(store);
 
+const createWorldClient = worldClientFactory(config.WORLD_BASE_URL);
+
 const manager = new NpcManager({
   store,
+  createClient: createWorldClient,
   // 未登録 kind は fallback（wait）で処理される。
   handlers: {
     ...createLifecycleHandlers(store),
@@ -54,6 +58,7 @@ const app = createApp({
   store,
   conversations,
   manager,
+  createWorldClient,
   webDistDir: join(import.meta.dirname, '../../web/dist'),
 });
 
@@ -61,6 +66,9 @@ const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.info(`karakuri-npc server listening on :${info.port}`);
   if (!config.WEBHOOK_PUBLIC_BASE_URL) {
     console.warn('WEBHOOK_PUBLIC_BASE_URL is not set. world からの webhook を受けるには公開 URL が必要です。');
+  }
+  if (!config.WORLD_BASE_URL) {
+    console.warn('WORLD_BASE_URL is not set. NPC を world に接続するには .env での設定が必要です。');
   }
 });
 

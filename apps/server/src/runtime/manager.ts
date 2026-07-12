@@ -1,6 +1,6 @@
 import type { NpcStore } from '../storage/npc-store.js';
 import type { Npc } from '../types/npc.js';
-import { WorldApiError, WorldClient, defaultCreateClient } from '../world/client.js';
+import { WorldApiError, WorldClient } from '../world/client.js';
 import type { WebhookDispatch } from '../webhook/receiver.js';
 import type { NotificationHandlers } from './npc-runtime.js';
 import { NpcRuntime } from './npc-runtime.js';
@@ -12,7 +12,7 @@ const RECOVERY_WINDOW_MS = 30 * 60 * 1000;
 export interface NpcManagerDeps {
   store: NpcStore;
   handlers: NotificationHandlers;
-  createClient?: (npc: Npc) => WorldClient;
+  createClient: (npc: Npc) => WorldClient;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
   healthIntervalMs?: number;
 }
@@ -34,7 +34,7 @@ export class NpcManager {
   constructor(deps: NpcManagerDeps) {
     this.store = deps.store;
     this.handlers = deps.handlers;
-    this.createClient = deps.createClient ?? defaultCreateClient;
+    this.createClient = deps.createClient;
     this.logger = deps.logger ?? console;
     this.healthIntervalMs = deps.healthIntervalMs ?? HEALTH_INTERVAL_MS;
   }

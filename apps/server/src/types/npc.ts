@@ -43,11 +43,12 @@ export interface Npc {
   npc_id: string;
   name: string;
   enabled: boolean;
-  world_base_url: string;
   agent_id: string;
   api_key: string;
   webhook_secret: string;
   persona: string;
+  /** ペルソナと別枠で「必ず守るルール」として system prompt に最優先で入る。 */
+  rules: string;
   home_node_id: string | null;
   movement: MovementConfig;
   conversation: ConversationPolicy;

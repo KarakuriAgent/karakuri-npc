@@ -91,13 +91,13 @@ CREATE TABLE npcs (
   npc_id            TEXT PRIMARY KEY,          -- 内部ID (uuid)
   name              TEXT NOT NULL,             -- 表示名（world側 agent_name と一致させる運用）
   enabled           INTEGER NOT NULL DEFAULT 0,-- 稼働フラグ（ON でログイン維持対象）
-  -- world 接続情報（world 側で発行された値を貼り付け）
-  world_base_url    TEXT NOT NULL,             -- 例 https://world.example.com
+  -- world 接続情報（world 側で発行された値を貼り付け。ベース URL は .env の WORLD_BASE_URL で全 NPC 共通）
   agent_id          TEXT NOT NULL UNIQUE,      -- world 側 npc-{uuid}
   api_key           TEXT NOT NULL,
   webhook_secret    TEXT NOT NULL,
   -- 行動設定
   persona           TEXT NOT NULL DEFAULT '',  -- 役割・口調などの system prompt 素材
+  rules             TEXT NOT NULL DEFAULT '',  -- 必ず守るルール（system prompt で最優先扱い）
   home_node_id      TEXT,                      -- 開始位置（ログイン時に node_id 指定）
   movement_json     TEXT NOT NULL DEFAULT '{}',-- MovementConfig（下記）
   conversation_json TEXT NOT NULL DEFAULT '{}',-- ConversationPolicy（下記）
@@ -384,8 +384,8 @@ NPC から渡す方は §6.3 の会話中 `give`（v1 はこれのみ。単独 `
    - NPC カード一覧: 稼働状態（ログイン中/停止/エラー）、現在地（world_id + node + location_label）、状態、所持金、最終活動時刻
    - 直近のイベントフィード（deliveries + command_log を時系列表示、SSE でライブ更新）
 2. **NPC 作成・編集** (`/npcs/new`, `/npcs/:id/edit`)
-   - 接続: world_base_url / agent_id / api_key / webhook_secret（world 側で発行した値を貼り付け）+「接続テスト」ボタン（存在しない通知 ID の取得を試み 401 なら認証 NG と判定。login/logout は行わないため位置指定ログインのクールダウンを消費しない）
-   - 人格: name / persona（テキストエリア）
+   - 接続: agent_id / api_key / webhook_secret（world 側で発行した値を貼り付け。ベース URL は .env の WORLD_BASE_URL）+「接続テスト」ボタン（存在しない通知 ID の取得を試み 401 なら認証 NG と判定。login/logout は行わないため位置指定ログインのクールダウンを消費しない）
+   - 人格: name / persona / rules（テキストエリア。rules は会話の流れより常に優先される絶対ルール）
    - 移動: mode、home_node_id、anchor + range（数値入力。v1 はマップピッカーなし）、move_probability、rest_duration
    - 会話: accept / inactive_check / max_history_pairs
    - アイテム: receive / give_enabled
@@ -424,6 +424,7 @@ POST   /api/auth/login, GET /api/auth/status
 ```
 PORT=8300
 DATA_DIR=./data                     # npc.sqlite
+WORLD_BASE_URL=                     # 必須。karakuri-world のベース URL（全 NPC 共通）
 WEBHOOK_PUBLIC_BASE_URL=            # 必須。world に登録する公開 https URL
 WEB_PASSWORD=                       # 任意。WebUI 認証
 OPENAI_BASE_URL= / OPENAI_API_KEY=  # 既定 LLM（OpenAI 互換）

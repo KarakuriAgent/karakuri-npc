@@ -10,12 +10,14 @@ import type { NpcManager } from './runtime/manager.js';
 import type { ConversationStore } from './storage/conversation-store.js';
 import type { NpcStore } from './storage/npc-store.js';
 import { registerWebhookRoute } from './webhook/receiver.js';
+import type { CreateWorldClient } from './world/client.js';
 
 export interface AppDeps {
   config: AppConfig;
   store: NpcStore;
   conversations: ConversationStore;
   manager: NpcManager;
+  createWorldClient: CreateWorldClient;
   /** WebUI ビルド成果物のディレクトリ（本番配信用）。存在しなければ配信しない。 */
   webDistDir?: string | undefined;
 }

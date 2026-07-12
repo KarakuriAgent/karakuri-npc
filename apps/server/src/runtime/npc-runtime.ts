@@ -1,7 +1,7 @@
 import type { NpcStore } from '../storage/npc-store.js';
 import type { Npc } from '../types/npc.js';
 import type { AgentNotification, AgentNotificationKind } from '../types/world.js';
-import { WorldApiError, WorldClient, defaultCreateClient } from '../world/client.js';
+import { WorldApiError, WorldClient } from '../world/client.js';
 import { chooseFallbackCommand, type CommandChoice } from './handlers/fallback.js';
 import { applyCommandResultToMirror, applyNotificationToMirror } from './state-mirror.js';
 
@@ -29,7 +29,7 @@ export type NotificationHandlers = Partial<Record<AgentNotificationKind, Notific
 export interface NpcRuntimeDeps {
   store: NpcStore;
   handlers: NotificationHandlers;
-  createClient?: (npc: Npc) => WorldClient;
+  createClient: (npc: Npc) => WorldClient;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
 }
 
@@ -50,7 +50,7 @@ export class NpcRuntime {
     this.npcId = npcId;
     this.store = deps.store;
     this.handlers = deps.handlers;
-    this.createClient = deps.createClient ?? defaultCreateClient;
+    this.createClient = deps.createClient;
     this.logger = deps.logger ?? console;
   }
 
@@ -79,7 +79,16 @@ export class NpcRuntime {
 
     this.store.updateDelivery(deliveryId, { status: 'processing' });
     this.store.patchRuntime(npc.npc_id, { last_notification_at: Date.now() });
-    const client = this.createClient(npc);
+
+    // createClient は WORLD_BASE_URL 未設定時に throw する。処理中のまま
+    // delivery を取り残さないよう、必ず failed へ落とす。
+    let client: WorldClient;
+    try {
+      client = this.createClient(npc);
+    } catch (error) {
+      this.recordFailure(deliveryId, npc, 'client_create_failed', error);
+      return;
+    }
 
     let notificationId: string;
     let notification: AgentNotification;

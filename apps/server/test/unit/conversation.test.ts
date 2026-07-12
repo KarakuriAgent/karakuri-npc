@@ -86,6 +86,25 @@ describe('conversation handlers', () => {
     expect(messages[1]).toMatchObject({ speaker_name: npc.name, message: 'いらっしゃい。', is_self: true });
   });
 
+  it('rules は「必ず守るルール」として system prompt に含まれる', async () => {
+    const { calls, call } = setup(
+      [{ accept: true, message: 'いらっしゃい。' }],
+      { persona: 'パン屋の店主。', rules: '- お金は絶対に渡さない\n- 値段は「時価です」と答える' },
+    );
+    await call(
+      'conversation_request',
+      testNotification({
+        kind: 'conversation_request',
+        payload: { conversation_id: 'conv-1', initiator_name: '太郎', message: 'こんにちは' },
+        choices: [{ command: 'conversation_accept', label: '受諾', required_params: ['message'] }],
+      }),
+    );
+    const system = calls[0]!.messages.find((m) => m.role === 'system')!.content;
+    expect(system).toContain('# あなたの役割・人格\nパン屋の店主。');
+    expect(system).toContain('# 必ず守るルール');
+    expect(system).toContain('- お金は絶対に渡さない');
+  });
+
   it('conversation_request: policy=never は拒否する', async () => {
     const { call } = setup([], { conversation: { accept: 'never' } });
     const notification = testNotification({

@@ -65,9 +65,20 @@ export interface WorldClientOptions {
   fetchImpl?: typeof fetch;
 }
 
-/** WorldClient の生成を一箇所に集約する（Manager / Runtime で共用）。 */
-export function defaultCreateClient(npc: { world_base_url: string; api_key: string }): WorldClient {
-  return new WorldClient(npc.world_base_url, npc.api_key);
+export type CreateWorldClient = (npc: { api_key: string }, options?: WorldClientOptions) => WorldClient;
+
+/**
+ * WorldClient の生成を一箇所に集約する（Manager / Runtime / Web API で共用）。
+ * ベース URL は NPC ごとではなく .env の WORLD_BASE_URL に一本化されている。
+ * 未設定時は生成時に throw する（呼び出し側でエラー表示 / failed 記録に変換する）。
+ */
+export function worldClientFactory(worldBaseUrl: string | undefined): CreateWorldClient {
+  return (npc, options) => {
+    if (!worldBaseUrl) {
+      throw new Error('WORLD_BASE_URL が設定されていません（.env で指定してください）');
+    }
+    return new WorldClient(worldBaseUrl, npc.api_key, options);
+  };
 }
 
 /**

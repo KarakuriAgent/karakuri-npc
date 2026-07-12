@@ -24,11 +24,11 @@ export interface NpcDto {
   npc_id: string;
   name: string;
   enabled: boolean;
-  world_base_url: string;
   agent_id: string;
   api_key_masked: string;
   webhook_secret_masked: string;
   persona: string;
+  rules: string;
   home_node_id: string | null;
   movement: MovementConfig;
   conversation: { accept: string; inactive_check: string; max_history_pairs: number };

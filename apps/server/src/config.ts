@@ -3,6 +3,11 @@ import { z } from 'zod';
 const configSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8300),
   DATA_DIR: z.string().min(1).default('./data'),
+  WORLD_BASE_URL: z
+    .string()
+    .url()
+    .transform((url) => url.replace(/\/+$/, ''))
+    .optional(),
   WEBHOOK_PUBLIC_BASE_URL: z.string().url().optional(),
   WEB_PASSWORD: z.string().optional(),
   OPENAI_BASE_URL: z.string().url().optional(),

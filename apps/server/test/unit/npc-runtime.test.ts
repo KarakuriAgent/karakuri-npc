@@ -48,6 +48,28 @@ describe('NpcRuntime', () => {
     expect(store.listCommandLog(npc.npc_id)).toHaveLength(1);
   });
 
+  it('createClient が throw したら delivery を failed にして last_error を残す', async () => {
+    const store = createTestStore();
+    const npc = store.createNpc(testNpcInput());
+    const runtime = new NpcRuntime(npc.npc_id, {
+      store,
+      handlers: {},
+      createClient: () => {
+        throw new Error('WORLD_BASE_URL が設定されていません（.env で指定してください）');
+      },
+      logger: silentLogger,
+    });
+    enqueue(store, npc.npc_id, 'delivery-1', 'notif-1');
+
+    runtime.enqueueDelivery('delivery-1');
+    await runtime.drain();
+
+    const delivery = store.getDelivery('delivery-1');
+    expect(delivery?.status).toBe('failed');
+    expect(delivery?.error).toContain('WORLD_BASE_URL');
+    expect(store.getRuntime(npc.npc_id)?.last_error).toContain('WORLD_BASE_URL');
+  });
+
   it('choices に wait が無ければコマンドを実行しない', async () => {
     const { store, npc, client, runtime } = setup();
     client.notifications.set('notif-1', testNotification({ choices: [] }));

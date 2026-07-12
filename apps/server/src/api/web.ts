@@ -18,18 +18,18 @@ import {
   movementConfigSchema,
   transferPolicySchema,
 } from '../types/npc.js';
-import { WorldApiError, WorldClient } from '../world/client.js';
+import { WorldApiError, type CreateWorldClient, type WorldClient } from '../world/client.js';
 import { issueSessionCookie, verifyPassword, verifySession, webAuth } from './web-auth.js';
 
 const nodeIdSchema = z.string().regex(/^\d+-\d+$/);
 
 const npcCreateSchema = z.object({
   name: z.string().min(1).max(100),
-  world_base_url: z.string().url(),
   agent_id: z.string().min(1),
   api_key: z.string().min(1),
   webhook_secret: z.string().min(1),
   persona: z.string().max(20_000).optional(),
+  rules: z.string().max(20_000).optional(),
   home_node_id: nodeIdSchema.nullable().optional(),
   enabled: z.boolean().optional(),
   movement: movementConfigSchema.partial().optional(),
@@ -58,11 +58,11 @@ function npcDto(npc: Npc, store: NpcStore): Record<string, unknown> {
     npc_id: npc.npc_id,
     name: npc.name,
     enabled: npc.enabled,
-    world_base_url: npc.world_base_url,
     agent_id: npc.agent_id,
     api_key_masked: mask(npc.api_key),
     webhook_secret_masked: mask(npc.webhook_secret),
     persona: npc.persona,
+    rules: npc.rules,
     home_node_id: npc.home_node_id,
     movement: npc.movement,
     conversation: npc.conversation,
@@ -79,10 +79,12 @@ export interface WebApiDeps {
   store: NpcStore;
   conversations: ConversationStore;
   manager: NpcManager;
+  /** WORLD_BASE_URL 未設定時は throw する（world/client.ts worldClientFactory）。 */
+  createWorldClient: CreateWorldClient;
 }
 
 export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
-  const { config, store, conversations, manager } = deps;
+  const { config, store, conversations, manager, createWorldClient } = deps;
   const auth = webAuth(config.WEB_PASSWORD);
 
   // ---- 認証（この 2 つだけ auth 不要） ----
@@ -193,7 +195,12 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
     if (!npc.home_node_id) {
       return c.json({ error: 'no_home', message: 'home_node_id が設定されていません。' }, 400);
     }
-    const client = new WorldClient(npc.world_base_url, npc.api_key);
+    let client: WorldClient;
+    try {
+      client = createWorldClient(npc);
+    } catch (error) {
+      return c.json({ error: 'no_world_base_url', message: error instanceof Error ? error.message : String(error) }, 400);
+    }
     try {
       await client.logout().catch((error: unknown) => {
         if (!(error instanceof WorldApiError && error.status === 409)) throw error;
@@ -245,7 +252,12 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
   app.post('/api/npcs/:id/test-connection', auth, async (c) => {
     const npc = store.getNpc(c.req.param('id'));
     if (!npc) return c.json({ error: 'not_found' }, 404);
-    const client = new WorldClient(npc.world_base_url, npc.api_key, { timeoutMs: 10_000 });
+    let client: WorldClient;
+    try {
+      client = createWorldClient(npc, { timeoutMs: 10_000 });
+    } catch (error) {
+      return c.json({ ok: false, detail: error instanceof Error ? error.message : String(error) });
+    }
     try {
       await client.getNotification('connection-test');
       return c.json({ ok: true, detail: 'reachable' });

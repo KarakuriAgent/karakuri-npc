@@ -13,11 +13,11 @@ interface NpcRow {
   npc_id: string;
   name: string;
   enabled: number;
-  world_base_url: string;
   agent_id: string;
   api_key: string;
   webhook_secret: string;
   persona: string;
+  rules: string;
   home_node_id: string | null;
   movement_json: string;
   conversation_json: string;
@@ -56,11 +56,11 @@ function npcFromRow(row: NpcRow): Npc {
     npc_id: row.npc_id,
     name: row.name,
     enabled: row.enabled === 1,
-    world_base_url: row.world_base_url,
     agent_id: row.agent_id,
     api_key: row.api_key,
     webhook_secret: row.webhook_secret,
     persona: row.persona,
+    rules: row.rules,
     home_node_id: row.home_node_id,
     movement: movementConfigSchema.parse(parseJson(row.movement_json)),
     conversation: conversationPolicySchema.parse(parseJson(row.conversation_json)),
@@ -89,11 +89,11 @@ function runtimeFromRow(row: RuntimeRow): NpcRuntimeState {
 
 export interface NpcCreateInput {
   name: string;
-  world_base_url: string;
   agent_id: string;
   api_key: string;
   webhook_secret: string;
   persona?: string | undefined;
+  rules?: string | undefined;
   home_node_id?: string | null | undefined;
   enabled?: boolean | undefined;
   movement?: unknown;
@@ -112,8 +112,8 @@ export class NpcStore {
     this.db
       .prepare(
         `INSERT INTO npcs(
-          npc_id, name, enabled, world_base_url, agent_id, api_key, webhook_secret,
-          persona, home_node_id, movement_json, conversation_json, transfer_json, llm_json,
+          npc_id, name, enabled, agent_id, api_key, webhook_secret,
+          persona, rules, home_node_id, movement_json, conversation_json, transfer_json, llm_json,
           created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
@@ -121,11 +121,11 @@ export class NpcStore {
         npcId,
         input.name,
         input.enabled ? 1 : 0,
-        input.world_base_url.replace(/\/+$/, ''),
         input.agent_id,
         input.api_key,
         input.webhook_secret,
         input.persona ?? '',
+        input.rules ?? '',
         input.home_node_id ?? null,
         JSON.stringify(movementConfigSchema.parse(input.movement ?? {})),
         JSON.stringify(conversationPolicySchema.parse(input.conversation ?? {})),
@@ -146,11 +146,11 @@ export class NpcStore {
     const next = {
       name: patch.name ?? current.name,
       enabled: patch.enabled ?? current.enabled,
-      world_base_url: (patch.world_base_url ?? current.world_base_url).replace(/\/+$/, ''),
       agent_id: patch.agent_id ?? current.agent_id,
       api_key: patch.api_key ?? current.api_key,
       webhook_secret: patch.webhook_secret ?? current.webhook_secret,
       persona: patch.persona ?? current.persona,
+      rules: patch.rules ?? current.rules,
       home_node_id: patch.home_node_id === undefined ? current.home_node_id : patch.home_node_id,
       movement: movementConfigSchema.parse(patch.movement ?? current.movement),
       conversation: conversationPolicySchema.parse(patch.conversation ?? current.conversation),
@@ -160,19 +160,19 @@ export class NpcStore {
     this.db
       .prepare(
         `UPDATE npcs SET
-          name = ?, enabled = ?, world_base_url = ?, agent_id = ?, api_key = ?, webhook_secret = ?,
-          persona = ?, home_node_id = ?, movement_json = ?, conversation_json = ?, transfer_json = ?,
+          name = ?, enabled = ?, agent_id = ?, api_key = ?, webhook_secret = ?,
+          persona = ?, rules = ?, home_node_id = ?, movement_json = ?, conversation_json = ?, transfer_json = ?,
           llm_json = ?, updated_at = ?
         WHERE npc_id = ?`,
       )
       .run(
         next.name,
         next.enabled ? 1 : 0,
-        next.world_base_url,
         next.agent_id,
         next.api_key,
         next.webhook_secret,
         next.persona,
+        next.rules,
         next.home_node_id,
         JSON.stringify(next.movement),
         JSON.stringify(next.conversation),
