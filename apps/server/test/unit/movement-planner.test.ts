@@ -18,7 +18,7 @@ function sequenceRandom(values: number[]): () => number {
 
 describe('pickMoveTargets', () => {
   it('アンカー±range の矩形内から重複なしで候補を選ぶ', () => {
-    const targets = pickMoveTargets({ row: 10, col: 20 }, { rows: 2, cols: 3 }, 5, Math.random);
+    const targets = pickMoveTargets({ mapId: null, row: 10, col: 20 }, { rows: 2, cols: 3 }, 5, Math.random);
     expect(targets.length).toBeGreaterThan(0);
     for (const target of targets) {
       const [row, col] = target.split('-').map(Number);
@@ -30,14 +30,27 @@ describe('pickMoveTargets', () => {
     expect(new Set(targets).size).toBe(targets.length);
   });
 
-  it('負の座標と現在地を除外する', () => {
-    // アンカーが原点付近 → 負座標が生成されうるが除外される
-    const targets = pickMoveTargets({ row: 0, col: 0 }, { rows: 2, cols: 2 }, 20, Math.random, '0-0');
+  it('範囲外座標（0 以下）と現在地を除外する', () => {
+    // world の座標は 1 始まり。アンカーが原点付近でも 0 行 / 0 列は生成されない
+    const targets = pickMoveTargets({ mapId: null, row: 1, col: 1 }, { rows: 2, cols: 2 }, 20, Math.random, '1-1');
+    expect(targets.length).toBeGreaterThan(0);
     for (const target of targets) {
       const [row, col] = target.split('-').map(Number);
-      expect(row).toBeGreaterThanOrEqual(0);
-      expect(col).toBeGreaterThanOrEqual(0);
-      expect(target).not.toBe('0-0');
+      expect(row).toBeGreaterThanOrEqual(1);
+      expect(col).toBeGreaterThanOrEqual(1);
+      expect(target).not.toBe('1-1');
+    }
+  });
+
+  it('サブマップ修飾つきアンカーは候補も同じ修飾で返す', () => {
+    const targets = pickMoveTargets({ mapId: 'ryokan-1f', row: 2, col: 3 }, { rows: 1, cols: 1 }, 10, Math.random, 'ryokan-1f:2-3');
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(target).toMatch(/^ryokan-1f:\d+-\d+$/);
+      expect(target).not.toBe('ryokan-1f:2-3');
+      const [row, col] = target.slice('ryokan-1f:'.length).split('-').map(Number);
+      expect(Math.abs(row! - 2)).toBeLessThanOrEqual(1);
+      expect(Math.abs(col! - 3)).toBeLessThanOrEqual(1);
     }
   });
 });
@@ -90,6 +103,16 @@ describe('planIdleAction', () => {
       const [row, col] = (move.params.target_node_id as string).split('-').map(Number);
       expect(Math.abs(row! - 30)).toBeLessThanOrEqual(1);
       expect(Math.abs(col! - 40)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('アンカーがサブマップ修飾つきなら move 候補も同じサブマップ内', () => {
+    const npc = makeNpc({ move_probability: 1, anchor_node_id: 'ryokan-1f:2-3', range: { rows: 1, cols: 1 } });
+    const plan = planIdleAction(npc, testNotification(), null, sequenceRandom([0, 0.1, 0.9, 0.5, 0.5, 0.2, 0.8, 0.3, 0.6, 0.4, 0.7]));
+    const moves = plan.filter((c) => c.command === 'move');
+    expect(moves.length).toBeGreaterThan(0);
+    for (const move of moves) {
+      expect(move.params.target_node_id).toMatch(/^ryokan-1f:\d+-\d+$/);
     }
   });
 

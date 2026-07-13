@@ -9,6 +9,7 @@ const configSchema = z.object({
     .transform((url) => url.replace(/\/+$/, ''))
     .optional(),
   WEBHOOK_PUBLIC_BASE_URL: z.string().url().optional(),
+  WORLD_MAP_DIR: z.string().min(1).default('./maps'),
   WEB_PASSWORD: z.string().optional(),
   OPENAI_BASE_URL: z.string().url().optional(),
   OPENAI_API_KEY: z.string().optional(),

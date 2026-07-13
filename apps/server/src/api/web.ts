@@ -21,9 +21,11 @@ import {
   transferPolicySchema,
 } from '../types/npc.js';
 import { WorldApiError, type CreateWorldClient, type WorldClient } from '../world/client.js';
+import type { WorldMapRepository } from '../world/maps.js';
 import { issueSessionCookie, verifyPassword, verifySession, webAuth } from './web-auth.js';
 
-const nodeIdSchema = z.string().regex(/^\d+-\d+$/);
+// world の nodeRefSchema と同じ形式。無修飾 "行-列" は屋外、"submap_id:行-列" は建物内サブマップ
+const nodeIdSchema = z.string().regex(/^(?:[a-z0-9][a-z0-9-]*:)?\d+-\d+$/);
 
 const npcCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -87,10 +89,11 @@ export interface WebApiDeps {
   manager: NpcManager;
   /** WORLD_BASE_URL 未設定時は throw する（world/client.ts worldClientFactory）。 */
   createWorldClient: CreateWorldClient;
+  worldMaps: WorldMapRepository;
 }
 
 export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
-  const { config, store, conversations, manager, createWorldClient } = deps;
+  const { config, store, conversations, manager, createWorldClient, worldMaps } = deps;
   const auth = webAuth(config.WEB_PASSWORD);
 
   // ---- 認証（この 2 つだけ auth 不要） ----
@@ -343,6 +346,23 @@ export function registerWebApiRoutes(app: Hono, deps: WebApiDeps): void {
       deliveries: store.listDeliveries(npc.npc_id, limit),
       commands: store.listCommandLog(npc.npc_id, limit),
     });
+  });
+
+  // ---- ワールドマップ（NPC 配置 UI 用。WORLD_MAP_DIR の YAML を配信する） ----
+
+  app.get('/api/maps', auth, (c) => {
+    return c.json({ maps: worldMaps.listMaps(), map_dir: config.WORLD_MAP_DIR });
+  });
+
+  app.get('/api/maps/:worldId', auth, (c) => {
+    let map;
+    try {
+      map = worldMaps.getMap(c.req.param('worldId'));
+    } catch (error) {
+      return c.json({ error: 'invalid_map', message: error instanceof Error ? error.message : String(error) }, 500);
+    }
+    if (!map) return c.json({ error: 'not_found', message: 'マップが見つかりません。' }, 404);
+    return c.json(map);
   });
 
   // ---- 設定・メタ ----

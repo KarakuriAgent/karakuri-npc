@@ -41,6 +41,7 @@ cp apps/server/env.example apps/server/.env
 | `DATA_DIR` | - | SQLite の置き場所（既定 `./data`） |
 | `WORLD_BASE_URL` | ✅ | karakuri-world のベース URL（全 NPC 共通） |
 | `WEBHOOK_PUBLIC_BASE_URL` | ✅ | world から見えるこのサーバーの公開 https URL |
+| `WORLD_MAP_DIR` | - | NPC 配置 UI 用のマップ YAML 置き場（既定 `./maps`） |
 | `WEB_PASSWORD` | - | WebUI のパスワード（未設定なら認証なし。localhost 運用専用） |
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL` | ✅(いずれかの LLM) | 既定 LLM（OpenAI 互換。LiteLLM proxy / Ollama 等も可） |
 | `ANTHROPIC_API_KEY` | - | Anthropic を使う場合 |
@@ -90,8 +91,26 @@ webhook 公開 URL（トンネル）はコンテナ外で用意する: `cloudfla
 2. **karakuri-npc の WebUI**（`http://localhost:8300`）で「NPC を作成」
    - world 接続情報（上記 3 点 + world のベース URL）を貼り付け
    - ペルソナ（役割・口調）、開始位置（`home_node_id`）、移動モード・範囲・確率、会話・アイテムのポリシーを設定
+   - 開始位置・移動範囲の中心は「マップから選択」でマップをクリックして指定できる（下記）
    - 保存後「接続テスト」で疎通確認
 3. ダッシュボードで「稼働する」→ NPC が world にログインし、自走を始める
+
+### マップから位置を選択する
+
+karakuri-world のワールド定義 YAML を `WORLD_MAP_DIR`（既定 `apps/server/maps/`）に置くと、
+NPC フォームの「マップから選択」でマップを表示し、クリックで `home_node_id` / 移動範囲の中心を指定できる。
+設定済み NPC の home（🏠）とログイン中 NPC の現在位置（📍）もマップ上に表示される。
+
+- `main.yaml` … メインワールド（karakuri-world サーバーの config YAML をコピー）
+- `<world_id>.yaml` … サブワールド（world 側に登録した world_id とファイル名を揃える）
+
+YAML はリクエストごとに更新チェックされるため、差し替えにサーバー再起動は不要。
+`home_node_id` はメインワールドのログイン位置として使われる点に注意（サブワールドのマップは主に現在位置の確認用）。
+
+建物内サブマップ（YAML の `map.submaps`）にも対応している。マップ画面のフロア切替（屋外 / 🏢建物名）で
+サブマップを表示し、セルをクリックすると world の nodeRef 形式 `submap_id:行-列`（例 `ryokan-1f:2-3`）で
+設定される。home・移動範囲の中心ともこの形式が使え、ランダム移動のアンカーがサブマップ内なら
+移動候補も同じサブマップ内から選ばれる。座標は world 仕様に合わせて 1 始まり（`1-1`〜`行数-列数`）。
 
 ### NPC ができること
 

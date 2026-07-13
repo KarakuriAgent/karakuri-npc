@@ -17,6 +17,7 @@ import { openDatabase } from './storage/database.js';
 import { ConversationStore } from './storage/conversation-store.js';
 import { NpcStore } from './storage/npc-store.js';
 import { worldClientFactory } from './world/client.js';
+import { WorldMapRepository } from './world/maps.js';
 
 const config = loadConfig();
 const db = openDatabase(join(config.DATA_DIR, 'npc.sqlite'));
@@ -73,6 +74,7 @@ const app = createApp({
   conversations,
   manager,
   createWorldClient,
+  worldMaps: new WorldMapRepository(config.WORLD_MAP_DIR),
   webDistDir: join(import.meta.dirname, '../../web/dist'),
 });
 

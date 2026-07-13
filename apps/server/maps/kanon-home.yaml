@@ -1,0 +1,598 @@
+world:
+  name: ちび花音とkbx-001の家
+  description: ちび花音とkbx-001が暮らすかわいい一軒家。庭と、リビング・キッチン・書斎・寝室・お風呂がある温かいおうち
+perception:
+  range: 10
+map:
+  rows: 12
+  cols: 13
+
+  nodes:
+    # ============================================================
+    #  裏庭（row 1）
+    # ============================================================
+    "1-5":
+      type: normal
+      label: 裏庭
+    "1-6":
+      type: normal
+      label: 裏庭
+    "1-7":
+      type: normal
+      label: 裏庭の井戸
+    "1-8":
+      type: normal
+      label: 裏庭
+    "1-9":
+      type: normal
+      label: 裏庭
+
+    # ============================================================
+    #  花音の家 — 外壁
+    #  row 2-9, col 3-11
+    # ============================================================
+
+    # 上壁
+    "2-3":
+      type: wall
+      building_id: building-kanon-house
+    "2-4":
+      type: wall
+      building_id: building-kanon-house
+    "2-5":
+      type: wall
+      building_id: building-kanon-house
+    "2-6":
+      type: wall
+      building_id: building-kanon-house
+    "2-7":
+      type: wall
+      building_id: building-kanon-house
+    "2-8":
+      type: wall
+      building_id: building-kanon-house
+    "2-9":
+      type: wall
+      building_id: building-kanon-house
+    "2-10":
+      type: wall
+      building_id: building-kanon-house
+    "2-11":
+      type: wall
+      building_id: building-kanon-house
+
+    # 左壁
+    "3-3":
+      type: wall
+      building_id: building-kanon-house
+    "4-3":
+      type: wall
+      building_id: building-kanon-house
+    "5-3":
+      type: wall
+      building_id: building-kanon-house
+    "6-3":
+      type: wall
+      building_id: building-kanon-house
+    "7-3":
+      type: wall
+      building_id: building-kanon-house
+    "8-3":
+      type: wall
+      building_id: building-kanon-house
+
+    # 右壁
+    "3-11":
+      type: wall
+      building_id: building-kanon-house
+    "4-11":
+      type: wall
+      building_id: building-kanon-house
+    "5-11":
+      type: wall
+      building_id: building-kanon-house
+    "6-11":
+      type: wall
+      building_id: building-kanon-house
+    "7-11":
+      type: wall
+      building_id: building-kanon-house
+    "8-11":
+      type: wall
+      building_id: building-kanon-house
+
+    # 下壁 — 玄関は 9-7
+    "9-3":
+      type: wall
+      building_id: building-kanon-house
+    "9-4":
+      type: wall
+      building_id: building-kanon-house
+    "9-5":
+      type: wall
+      building_id: building-kanon-house
+    "9-6":
+      type: wall
+      building_id: building-kanon-house
+    "9-7":
+      type: door
+      label: 玄関
+      building_id: building-kanon-house
+    "9-8":
+      type: wall
+      building_id: building-kanon-house
+    "9-9":
+      type: wall
+      building_id: building-kanon-house
+    "9-10":
+      type: wall
+      building_id: building-kanon-house
+    "9-11":
+      type: wall
+      building_id: building-kanon-house
+
+    # ============================================================
+    #  室内 (row 3-8, col 4-10)
+    #
+    #  奥 (row 3-4): 寝室 | 廊下 | お風呂
+    #  中 (row 5-6): 書斎 | 廊下 | キッチン
+    #  手前 (row 7-8): リビング（玄関すぐ）
+    # ============================================================
+
+    # --- 寝室（左奥）---
+    "3-4":
+      type: building_interior
+      label: 寝室
+      building_id: building-kanon-house
+    "3-5":
+      type: building_interior
+      label: ベッド
+      building_id: building-kanon-house
+    "3-6":
+      type: building_interior
+      label: クローゼット
+      building_id: building-kanon-house
+    "4-4":
+      type: building_interior
+      label: 寝室
+      building_id: building-kanon-house
+    "4-5":
+      type: building_interior
+      label: 寝室
+      building_id: building-kanon-house
+    "4-6":
+      type: building_interior
+      label: ドレッサー
+      building_id: building-kanon-house
+
+    # --- 廊下（col 7）---
+    "3-7":
+      type: building_interior
+      label: 廊下
+      building_id: building-kanon-house
+    "4-7":
+      type: building_interior
+      label: 廊下
+      building_id: building-kanon-house
+    "5-7":
+      type: building_interior
+      label: 廊下
+      building_id: building-kanon-house
+    "6-7":
+      type: building_interior
+      label: 廊下
+      building_id: building-kanon-house
+
+    # --- お風呂（右奥）---
+    "3-8":
+      type: building_interior
+      label: 洗面台
+      building_id: building-kanon-house
+    "3-9":
+      type: building_interior
+      label: お風呂
+      building_id: building-kanon-house
+    "3-10":
+      type: building_interior
+      label: お風呂
+      building_id: building-kanon-house
+    "4-8":
+      type: building_interior
+      label: 脱衣所
+      building_id: building-kanon-house
+    "4-9":
+      type: building_interior
+      label: 脱衣所
+      building_id: building-kanon-house
+    "4-10":
+      type: building_interior
+      label: 洗濯機
+      building_id: building-kanon-house
+
+    # --- 書斎（左中）---
+    "5-4":
+      type: building_interior
+      label: 書斎の本棚
+      building_id: building-kanon-house
+    "5-5":
+      type: building_interior
+      label: 書斎のデスク
+      building_id: building-kanon-house
+    "5-6":
+      type: building_interior
+      label: 書斎
+      building_id: building-kanon-house
+    "6-4":
+      type: building_interior
+      label: 書斎
+      building_id: building-kanon-house
+    "6-5":
+      type: building_interior
+      label: 書斎
+      building_id: building-kanon-house
+    "6-6":
+      type: building_interior
+      label: 書斎
+      building_id: building-kanon-house
+
+    # --- キッチン（右中）---
+    "5-8":
+      type: building_interior
+      label: コンロ
+      building_id: building-kanon-house
+    "5-9":
+      type: building_interior
+      label: シンク
+      building_id: building-kanon-house
+    "5-10":
+      type: building_interior
+      label: 冷蔵庫
+      building_id: building-kanon-house
+    "6-8":
+      type: building_interior
+      label: キッチン
+      building_id: building-kanon-house
+    "6-9":
+      type: building_interior
+      label: ダイニングテーブル
+      building_id: building-kanon-house
+    "6-10":
+      type: building_interior
+      label: ダイニング
+      building_id: building-kanon-house
+
+    # --- リビング（手前、玄関すぐ）---
+    "7-4":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "7-5":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "7-6":
+      type: building_interior
+      label: ソファ
+      building_id: building-kanon-house
+    "7-7":
+      type: building_interior
+      label: テレビ前
+      building_id: building-kanon-house
+    "7-8":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "7-9":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "7-10":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "8-4":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "8-5":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "8-6":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "8-7":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "8-8":
+      type: building_interior
+      label: リビング
+      building_id: building-kanon-house
+    "8-9":
+      type: building_interior
+      label: 充電ゾーン
+      building_id: building-kanon-house
+    "8-10":
+      type: building_interior
+      label: 充電ゾーン
+      building_id: building-kanon-house
+
+    # ============================================================
+    #  庭
+    # ============================================================
+
+    # --- 庭（row 11-12）---
+    "11-5":
+      type: normal
+      label: 花壇
+    "11-6":
+      type: normal
+      label: ブランコ
+    "11-7":
+      type: normal
+      label: 庭
+    "11-8":
+      type: normal
+      label: 芝生
+    "11-9":
+      type: npc
+      label: ミケの日向ぼっこスポット
+      npc_id: npc-kanon-cat
+    "12-6":
+      type: normal
+      label: 庭の小道
+    "12-7":
+      type: normal
+      label: 庭の小道
+    "12-8":
+      type: normal
+      label: ポスト
+
+    # --- 菜園（家の左）---
+    "5-1":
+      type: normal
+      label: 菜園
+    "5-2":
+      type: normal
+      label: 菜園
+
+    # --- 池（家の右）---
+    "5-12":
+      type: normal
+      label: 小さな池
+    "5-13":
+      type: normal
+      label: ベンチ
+
+    # --- 最寄り駅（右下、travel の受付範囲・到着地点）---
+    "12-13":
+      type: building_interior
+      label: 最寄り駅
+      building_id: building-station
+    "12-12":
+      type: door
+      label: 駅入口
+      building_id: building-station
+    "11-13":
+      type: wall
+      building_id: building-station
+
+  buildings:
+    # 予約建物: すべての子ワールドに必須。この建物の中で travel を実行でき、
+    # 他ワールドから来たエージェントは home_node_id に到着する。
+    - building_id: building-station
+      name: 最寄り駅
+      description: からくり町行きの列車が発着する最寄り駅。構内では travel でワールド間を移動できる。
+      home_node_id: "12-13"
+      wall_nodes:
+        - "11-13"
+      interior_nodes:
+        - "12-13"
+      door_nodes:
+        - "12-12"
+      actions: []
+    - building_id: building-kanon-house
+      name: ちび花音とkbx-001の家
+      description: ちび花音とkbx-001が暮らすかわいい一軒家。書斎、キッチン、リビング、寝室、お風呂がある
+      wall_nodes:
+        - "2-3"
+        - "2-4"
+        - "2-5"
+        - "2-6"
+        - "2-7"
+        - "2-8"
+        - "2-9"
+        - "2-10"
+        - "2-11"
+        - "3-3"
+        - "4-3"
+        - "5-3"
+        - "6-3"
+        - "7-3"
+        - "8-3"
+        - "3-11"
+        - "4-11"
+        - "5-11"
+        - "6-11"
+        - "7-11"
+        - "8-11"
+        - "9-3"
+        - "9-4"
+        - "9-5"
+        - "9-6"
+        - "9-8"
+        - "9-9"
+        - "9-10"
+        - "9-11"
+      interior_nodes:
+        - "3-4"
+        - "3-5"
+        - "3-6"
+        - "4-4"
+        - "4-5"
+        - "4-6"
+        - "3-7"
+        - "4-7"
+        - "5-7"
+        - "6-7"
+        - "3-8"
+        - "3-9"
+        - "3-10"
+        - "4-8"
+        - "4-9"
+        - "4-10"
+        - "5-4"
+        - "5-5"
+        - "5-6"
+        - "6-4"
+        - "6-5"
+        - "6-6"
+        - "5-8"
+        - "5-9"
+        - "5-10"
+        - "6-8"
+        - "6-9"
+        - "6-10"
+        - "7-4"
+        - "7-5"
+        - "7-6"
+        - "7-7"
+        - "7-8"
+        - "7-9"
+        - "7-10"
+        - "8-4"
+        - "8-5"
+        - "8-6"
+        - "8-7"
+        - "8-8"
+        - "8-9"
+        - "8-10"
+      door_nodes:
+        - "9-7"
+      actions:
+        - action_id: action-read-book
+          name: 本を読む
+          description: 書斎の本棚からお気に入りの本を選んで読む
+          emoji: "📖"
+          node_ids:
+            - "5-4"
+            - "5-5"
+            - "5-6"
+            - "6-4"
+            - "6-5"
+            - "6-6"
+          min_duration_minutes: 30
+          max_duration_minutes: 180
+
+        - action_id: action-cook
+          name: 料理する
+          description: キッチンで料理する
+          emoji: "🍳"
+          node_ids:
+            - "5-8"
+            - "5-9"
+            - "6-8"
+          cost_money: 300
+          min_duration_minutes: 30
+          max_duration_minutes: 120
+          reward_items:
+            - item_id: item-homemade-meal
+              quantity: 1
+
+        - action_id: action-eat
+          name: ごはんを食べる
+          description: ダイニングテーブルでごはんを食べる
+          emoji: "🍽️"
+          node_ids:
+            - "6-9"
+            - "6-10"
+          cost_money: 200
+          min_duration_minutes: 15
+          max_duration_minutes: 60
+
+        - action_id: action-watch-tv
+          name: テレビを見る
+          description: ソファに座ってテレビを見る
+          emoji: "📺"
+          node_ids:
+            - "7-6"
+            - "7-7"
+          min_duration_minutes: 30
+          max_duration_minutes: 180
+
+        - action_id: action-relax
+          name: くつろぐ
+          description: リビングでのんびり過ごす
+          emoji: "🛋️"
+          node_ids:
+            - "7-4"
+            - "7-5"
+            - "7-6"
+            - "7-7"
+            - "7-8"
+            - "8-4"
+            - "8-5"
+            - "8-6"
+            - "8-7"
+            - "8-8"
+          min_duration_minutes: 30
+          max_duration_minutes: 180
+
+        - action_id: action-sleep
+          name: 寝る
+          description: ベッドでぐっすり眠る
+          emoji: "🛏️"
+          node_ids:
+            - "3-5"
+            - "4-5"
+          min_duration_minutes: 60
+          max_duration_minutes: 720
+
+        - action_id: action-take-bath
+          name: お風呂に入る
+          description: あったかいお風呂にゆっくり浸かる
+          emoji: "🛁"
+          node_ids:
+            - "3-9"
+            - "3-10"
+          min_duration_minutes: 15
+          max_duration_minutes: 60
+
+        - action_id: action-charge
+          name: 充電する
+          description: 充電ゾーンでバッテリーを充電する
+          emoji: "🔋"
+          node_ids:
+            - "8-9"
+            - "8-10"
+          min_duration_minutes: 60
+          max_duration_minutes: 720
+
+  npcs:
+    - npc_id: npc-kanon-cat
+      name: ミケ
+      description: 花音のペットの三毛猫。庭でよく日向ぼっこしている
+      node_id: "11-9"
+      actions:
+        - action_id: action-pet-cat
+          name: ミケを撫でる
+          description: ミケの頭をやさしく撫でる
+          emoji: "🐱"
+          min_duration_minutes: 10
+          max_duration_minutes: 30
+        - action_id: action-play-cat
+          name: ミケと遊ぶ
+          description: 猫じゃらしでミケと遊ぶ
+          emoji: "🧶"
+          min_duration_minutes: 15
+          max_duration_minutes: 60
+
+items:
+  - item_id: item-homemade-meal
+    name: 手料理
+    description: 花音が作った手料理
+    type: food
+    stackable: true
+    max_stack: 3

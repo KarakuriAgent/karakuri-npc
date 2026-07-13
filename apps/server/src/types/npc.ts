@@ -3,7 +3,8 @@ import { z } from 'zod';
 /** 移動設定。range は「次の移動先を選ぶ範囲」（アンカー±range の矩形）。 */
 export const movementConfigSchema = z.object({
   mode: z.enum(['random', 'stationary']).default('stationary'),
-  anchor_node_id: z.string().regex(/^\d+-\d+$/).optional(),
+  // 無修飾 "行-列" は屋外、"submap_id:行-列" は建物内サブマップ（world の nodeRef 形式）
+  anchor_node_id: z.string().regex(/^(?:[a-z0-9][a-z0-9-]*:)?\d+-\d+$/).optional(),
   range: z
     .object({
       rows: z.number().int().min(0).max(200),

@@ -18,8 +18,12 @@ services:
       DATA_DIR: /app/data
       # ログイン時間帯の判定はサーバーのローカル時刻に従うため日本時間に固定する
       TZ: Asia/Tokyo
+      # NPC 配置 UI 用マップ YAML（下の bind mount 先に固定）
+      WORLD_MAP_DIR: /app/maps
     volumes:
       - npc-data:/app/data
+      # マップ YAML はホスト側で編集するため bind mount
+      - ./apps/server/maps:/app/maps:ro
     restart: unless-stopped
     init: true
     # graceful shutdown（NPC キュー排水）の内部タイムアウト 10 秒より長く取る

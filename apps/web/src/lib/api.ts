@@ -85,6 +85,35 @@ export interface MemoryDto {
   updated_at: number;
 }
 
+export interface WorldMapSummary {
+  world_id: string;
+  name: string;
+  rows: number;
+  cols: number;
+  error?: string;
+}
+
+export interface WorldMapNode {
+  type: string;
+  label?: string;
+  building_id?: string;
+}
+
+export interface WorldSubmapDto {
+  submap_id: string;
+  name: string;
+  building_id?: string;
+  rows: number;
+  cols: number;
+  nodes: Record<string, WorldMapNode>;
+}
+
+export interface WorldMapDto extends WorldMapSummary {
+  nodes: Record<string, WorldMapNode>;
+  buildings: Record<string, string>;
+  submaps: WorldSubmapDto[];
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,

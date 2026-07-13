@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import MapPicker from '../components/MapPicker';
 import { api, ApiError, type NpcDto, type ScheduleWindow } from '../lib/api';
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
@@ -130,6 +131,7 @@ export default function NpcForm() {
   const [error, setError] = useState('');
   const [testResult, setTestResult] = useState('');
   const [saving, setSaving] = useState(false);
+  const [picker, setPicker] = useState<'home' | 'anchor' | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -264,14 +266,23 @@ export default function NpcForm() {
       <section className="space-y-4 rounded-lg bg-white p-5 shadow-sm">
         <h2 className="font-semibold">移動</h2>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="開始位置 (home_node_id)" hint="例: 50-50。ログイン時にこの位置から開始">
-            <input
-              className={inputClass}
-              pattern="\d+-\d+"
-              value={form.home_node_id}
-              onChange={(e) => set('home_node_id', e.target.value)}
-              placeholder="50-50"
-            />
+          <Field label="開始位置 (home_node_id)" hint="例: 50-50（建物内は submap_id:2-3 形式）。ログイン時にこの位置から開始">
+            <div className="flex gap-2">
+              <input
+                className={inputClass}
+                pattern="([a-z0-9][a-z0-9-]*:)?\d+-\d+"
+                value={form.home_node_id}
+                onChange={(e) => set('home_node_id', e.target.value)}
+                placeholder="50-50"
+              />
+              <button
+                type="button"
+                onClick={() => setPicker('home')}
+                className="shrink-0 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
+              >
+                マップから選択
+              </button>
+            </div>
           </Field>
           <Field label="移動モード">
             <select className={inputClass} value={form.movement_mode} onChange={(e) => set('movement_mode', e.target.value as FormState['movement_mode'])}>
@@ -284,7 +295,16 @@ export default function NpcForm() {
           <>
             <div className="grid grid-cols-3 gap-4">
               <Field label="移動範囲の中心" hint="空欄なら開始位置(home)基準">
-                <input className={inputClass} pattern="\d+-\d+" value={form.anchor_node_id} onChange={(e) => set('anchor_node_id', e.target.value)} placeholder="home と同じ" />
+                <div className="flex gap-2">
+                  <input className={inputClass} pattern="([a-z0-9][a-z0-9-]*:)?\d+-\d+" value={form.anchor_node_id} onChange={(e) => set('anchor_node_id', e.target.value)} placeholder="home と同じ" />
+                  <button
+                    type="button"
+                    onClick={() => setPicker('anchor')}
+                    className="shrink-0 rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
+                  >
+                    マップ
+                  </button>
+                </div>
               </Field>
               <Field label="範囲 縦(±行)">
                 <input type="number" min={0} max={200} className={inputClass} value={form.range_rows} onChange={(e) => set('range_rows', Number(e.target.value))} />
@@ -442,6 +462,19 @@ export default function NpcForm() {
           </Field>
         </div>
       </section>
+
+      {picker && (
+        <MapPicker
+          title={picker === 'home' ? '開始位置 (home_node_id) を選択' : '移動範囲の中心を選択'}
+          value={picker === 'home' ? form.home_node_id : form.anchor_node_id}
+          currentNpcId={id}
+          onSelect={(nodeId) => {
+            set(picker === 'home' ? 'home_node_id' : 'anchor_node_id', nodeId);
+            setPicker(null);
+          }}
+          onClose={() => setPicker(null)}
+        />
+      )}
 
       {error && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
