@@ -24,7 +24,7 @@ services:
       - npc-data:/app/data
       # マップ YAML はホスト側で編集するため bind mount
       - ./apps/server/maps:/app/maps:ro
-    restart: unless-stopped
+    restart: always
     init: true
     # graceful shutdown（NPC キュー排水）の内部タイムアウト 10 秒より長く取る
     stop_grace_period: 15s
